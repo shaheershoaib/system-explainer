@@ -1,0 +1,47 @@
+{
+  "p": {
+    "learnerId": "p",
+    "learner": {
+      "name": "Reviewer"
+    },
+    "modules": {
+      "vanilla-store": {
+        "completedAt": 1781778736756,
+        "lessonsViewed": [],
+        "attempts": [
+          {
+            "quizItemId": "vs-q-spotbug",
+            "correct": true,
+            "at": 1781778741709
+          }
+        ]
+      },
+      "react-binding": {
+        "completedAt": 1781778736757
+      },
+      "selectors-rerenders": {
+        "completedAt": 1781778736757
+      }
+    },
+    "updatedAt": 1781778768030
+  },
+  "9fd337db-2265-48bb-a201-8ffa6a5bcb94": {
+    "learnerId": "9fd337db-2265-48bb-a201-8ffa6a5bcb94",
+    "learner": {
+      "name": "Shaheer Shoaib",
+      "email": "dev@example.com"
+    },
+    "modules": {
+      "vanilla-store": {
+        "lessonsViewed": [
+          "vs-what",
+          "vs-set",
+          "vs-immutable"
+        ],
+        "attempts": [],
+        "startedAt": 1781774051296
+      }
+    },
+    "updatedAt": 1781778725972
+  }
+}

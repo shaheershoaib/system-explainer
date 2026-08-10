@@ -1,0 +1,209 @@
+{
+  "schemaVersion": "1.0.0",
+  "system": {
+    "id": "zustand-plain",
+    "name": "zustand (plain-English intro)",
+    "oneLiner": "zustand is a shared notebook for an app: one place that holds the current information, where any part of the screen can read what it needs and is told when that piece changes.",
+    "elevatorPitch": "Think of a small shared notebook that the whole app can see. When something happens (a click, a reply from a server), the app writes the new value into the notebook. Any part of the screen that was watching that particular line updates — and nothing else does. That selective updating is the whole idea: it keeps the app fast without anyone having to wire screens together by hand.",
+    "outOfScope": [
+      "This intro skips the code. It is about the ideas, so you can talk to engineers (and to AI coding tools) with confidence.",
+      "It does not cover setup, installation, or the React-specific wiring — that lives in the developer course."
+    ],
+    "depth": "L1",
+    "audience": "non-technical"
+  },
+  "actors": [
+    {
+      "id": "app",
+      "name": "The app",
+      "role": "The screens a person sees and clicks. Parts of the app read from the shared notebook and react when their part changes."
+    }
+  ],
+  "entities": [
+    {
+      "id": "store",
+      "name": "The store (the notebook)",
+      "definition": "One shared place that holds the current information for the app — like a notebook everyone can see. There is usually just one per topic (e.g. the shopping cart)."
+    },
+    {
+      "id": "state",
+      "name": "The current values",
+      "definition": "What is written in the notebook right now: the count of items, whether someone is logged in, the list on screen. It changes over time as things happen."
+    },
+    {
+      "id": "selector",
+      "name": "Watching one line",
+      "definition": "A part of the screen says \"I only care about this one line of the notebook.\" It updates when that line changes, and ignores everything else."
+    }
+  ],
+  "modules": [
+    {
+      "id": "what-is-a-store",
+      "title": "The shared notebook",
+      "order": 1,
+      "objective": "Picture what a \"store\" is without any code: one shared place that holds the app’s current information.",
+      "oneJob": "Build the mental picture of a single shared source of truth.",
+      "estMinutes": 6,
+      "entitiesIntroduced": [
+        "store",
+        "state"
+      ],
+      "actorsIntroduced": [
+        "app"
+      ],
+      "lessons": [
+        {
+          "id": "nb-what",
+          "title": "One notebook everyone can read",
+          "blocks": [
+            {
+              "type": "prose",
+              "md": "Imagine a single notebook pinned to the office wall. Anyone can walk up and read it, and anyone can update it. In an app, that notebook is called a **store**. Instead of each screen keeping its own private copy of \"how many items are in the cart,\" they all read from the one notebook — so they never disagree.",
+              "heading": "The big idea"
+            },
+            {
+              "type": "mental-model",
+              "heading": "Two things to picture",
+              "entities": [
+                "store",
+                "state"
+              ],
+              "md": "The **notebook** (the store) is the place. The **current values** (the state) are what is written in it right now. The place stays put; the values change as things happen."
+            },
+            {
+              "type": "predict-reveal",
+              "prompt": "Two different screens both show the number of items in the cart. Someone adds an item. Do the two screens ever show different numbers?",
+              "reveal": "No. Because both screens read from the same notebook, they always show the same number. There is only one source of truth, so they cannot drift apart. That is the main reason apps use a shared store.",
+              "hint": "How many notebooks are there?"
+            }
+          ]
+        }
+      ],
+      "quiz": [
+        {
+          "id": "nb-q-one",
+          "type": "mcq",
+          "prompt": "In plain terms, what is a \"store\"?",
+          "options": [
+            {
+              "id": "a",
+              "text": "One shared place that holds the app’s current information, that any screen can read.",
+              "correct": true
+            },
+            {
+              "id": "b",
+              "text": "A separate private copy of the data inside each screen.",
+              "correct": false,
+              "ifChosen": "That is the problem a store avoids. With private copies, screens drift apart; the store gives everyone one shared notebook."
+            }
+          ],
+          "explanation": "A store is the single shared notebook the whole app reads from.",
+          "misconception": {
+            "id": "mc-plain-private-copies",
+            "trap": "Each screen keeps its own copy of the data",
+            "correction": "There is one shared store; screens read from it, so they always agree.",
+            "relatedEntities": [
+              "store"
+            ]
+          },
+          "difficulty": "intro"
+        }
+      ]
+    },
+    {
+      "id": "why-parts-update",
+      "title": "Why only part of the screen changes",
+      "order": 2,
+      "prerequisites": [
+        "what-is-a-store"
+      ],
+      "objective": "Understand why updating the notebook refreshes only the parts of the screen that care — and why that keeps the app fast.",
+      "oneJob": "Picture \"watching one line\" and why it matters.",
+      "estMinutes": 6,
+      "entitiesIntroduced": [
+        "selector"
+      ],
+      "lessons": [
+        {
+          "id": "nb-watch",
+          "title": "Watching one line",
+          "blocks": [
+            {
+              "type": "prose",
+              "md": "Each part of the screen says which line of the notebook it cares about. The cart icon watches the \"number of items\" line. The login button watches the \"is someone logged in\" line. When a line changes, only the parts watching that line refresh.",
+              "heading": "Subscribe to what you care about"
+            },
+            {
+              "type": "mental-model",
+              "heading": "The picture",
+              "entities": [
+                "selector",
+                "state"
+              ],
+              "md": "A part of the screen **watches one line**. Change that line and it updates. Change a different line and it stays exactly as it was."
+            },
+            {
+              "type": "callout",
+              "variant": "note",
+              "md": "This is why the app feels fast: changing one value does not redraw the whole screen, only the small pieces that were watching that value."
+            },
+            {
+              "type": "predict-reveal",
+              "prompt": "The cart icon watches the \"number of items\" line. Someone changes the \"is logged in\" line instead. Does the cart icon redraw?",
+              "reveal": "No. The cart icon only watches the items line, so a change to a different line does not affect it. That selective updating is the heart of why this approach is efficient.",
+              "hint": "Which line is the cart icon watching?"
+            }
+          ]
+        }
+      ],
+      "quiz": [
+        {
+          "id": "nb-q-watch",
+          "type": "mcq",
+          "prompt": "Why does changing one value not redraw the whole screen?",
+          "options": [
+            {
+              "id": "a",
+              "text": "Each part of the screen only watches the lines it cares about, so unrelated changes are ignored.",
+              "correct": true
+            },
+            {
+              "id": "b",
+              "text": "The whole screen redraws every time, but very quickly.",
+              "correct": false,
+              "ifChosen": "It does not redraw everything — that would be slow. Only the parts watching the changed line update."
+            }
+          ],
+          "explanation": "Parts of the screen subscribe to specific lines, so only the relevant ones refresh.",
+          "misconception": {
+            "id": "mc-plain-redraw-all",
+            "trap": "Any change redraws the whole screen",
+            "correction": "Only the parts watching the changed value update; everything else stays put.",
+            "relatedEntities": [
+              "selector"
+            ]
+          },
+          "difficulty": "intro"
+        }
+      ]
+    }
+  ],
+  "glossary": [
+    {
+      "term": "store",
+      "definition": "The one shared notebook that holds the app’s current information."
+    },
+    {
+      "term": "state",
+      "definition": "What is written in the notebook right now — the values that change over time."
+    },
+    {
+      "term": "selector",
+      "definition": "A part of the screen choosing which one line of the notebook to watch."
+    }
+  ],
+  "theme": {
+    "accent": "#7c3aed"
+  },
+  "generatedAt": "2026-06-18T10:29:13.564Z"
+}
