@@ -72,6 +72,32 @@ export const FlowSchema = z.object({
   steps: z.array(FlowStepSchema).min(1),
 })
 
+// ── Traces: "the life of one X" — one unit of work from entry trigger to terminal state ──
+// The connective tissue a per-domain catalog never produces: each step is a hand-off named
+// with the EXACT observed label (a function, an event, a status, a UI surface), and the model
+// (component / actor / entity) hangs off the trace as it appears.
+export const TraceStepSchema = z.object({
+  id: z.string(),
+  /** The exact observed label of the hand-off, copied from the source, never paraphrased. */
+  label: z.string(),
+  /** Free text, or an architecture component id (rendered as that component's name when it matches). */
+  component: z.string().optional(),
+  actor: z.string().optional(),
+  entity: z.string().optional(),
+  note: z.string().optional(),
+  /** Repo-relative path, optionally with lines: `src/x.ts` or `src/x.ts:12-20`. */
+  sourcePath: z.string().optional(),
+})
+export const TraceSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  /** The unit being traced, e.g. "one set() call", "one invoice". */
+  subject: z.string(),
+  intro: z.string().optional(),
+  steps: z.array(TraceStepSchema).min(2),
+  outro: z.string().optional(),
+})
+
 // ── Simulations: a guided walkthrough of a process with a live state ledger ───
 // Reasoned at build time from the behavior layer (verbs / flows / quantities).
 export const SimVarSchema = z.object({
@@ -238,6 +264,11 @@ const ScreenBlockSchema = z.object({
   screenId: z.string(),
   title: z.string().optional(),
 })
+const TraceBlockSchema = z.object({
+  type: z.literal('trace'),
+  traceId: z.string(),
+  title: z.string().optional(),
+})
 // Code-map: bridge a concept (entity/verb) to the files that implement it.
 const CodeMapBlockSchema = z.object({
   type: z.literal('code-map'),
@@ -302,6 +333,7 @@ export const BlockSchema = z.discriminatedUnion('type', [
   CalloutBlockSchema,
   SimulationBlockSchema,
   ScreenBlockSchema,
+  TraceBlockSchema,
   CodeMapBlockSchema,
   DecisionsBlockSchema,
   SourcesBlockSchema,
@@ -467,6 +499,7 @@ export const OnboardingBundleSchema = z.object({
   entities: z.array(EntitySchema),
   verbs: z.array(VerbSchema).optional(),
   flows: z.array(FlowSchema).optional(),
+  traces: z.array(TraceSchema).optional(),
   simulations: z.array(SimulationSchema).optional(),
   screens: z.array(ScreenSchema).optional(),
   architecture: ArchitectureSchema.optional(),
@@ -487,6 +520,8 @@ export type Entity = z.infer<typeof EntitySchema>
 export type Verb = z.infer<typeof VerbSchema>
 export type FlowStep = z.infer<typeof FlowStepSchema>
 export type Flow = z.infer<typeof FlowSchema>
+export type TraceStep = z.infer<typeof TraceStepSchema>
+export type Trace = z.infer<typeof TraceSchema>
 export type SimVar = z.infer<typeof SimVarSchema>
 export type SimEffect = z.infer<typeof SimEffectSchema>
 export type SimOption = z.infer<typeof SimOptionSchema>

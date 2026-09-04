@@ -1,10 +1,11 @@
 import { Link } from 'react-router'
-import { ArrowRight, BadgeCheck, CircleCheck, Clock, Lock, Map, RefreshCw, ShieldCheck } from 'lucide-react'
+import { ArrowRight, BadgeCheck, CircleCheck, Clock, Lock, Map, RefreshCw, Route, ShieldCheck } from 'lucide-react'
 import { useBundle } from '../lib/useBundle'
 import { audienceOf, AUDIENCE_LABEL, shortRepoRef } from '../lib/persona'
 import { completedModuleIds, conceptsDue, moduleUnlocked, useProgress } from '../lib/progress'
 import { Layout } from '../components/Layout'
 import { Diagram } from '../components/diagrams/Diagram'
+import { TraceDiagram } from '../components/trace/TraceDiagram'
 
 const DEPTH_LABEL: Record<string, string> = { L1: 'Orientation', L2: 'Working knowledge', L3: 'Contributor depth' }
 
@@ -150,10 +151,13 @@ export function HomePage() {
 /**
  * The system at a glance — the whole-system map as the landing hero (the instantly-explorable
  * artifact, not buried inside lesson N). ER always (when relationships exist); the architecture
- * diagram for developer audiences (its nodes click through to pinned source).
+ * diagram for developer audiences (its nodes click through to pinned source). When the bundle
+ * carries traces, the first one leads as "The life of <subject>": for unit-of-work systems the
+ * trace IS the model, so it sits above the static data model.
  */
 function SystemMap() {
   const bundle = useBundle()
+  const hero = bundle.traces?.[0]
   const related = bundle.entities.filter((e) => (e.relationships?.length ?? 0) > 0)
   const erScope =
     bundle.entities.length <= 18
@@ -161,16 +165,28 @@ function SystemMap() {
       : [...new Set(related.flatMap((e) => [e.id, ...(e.relationships ?? []).map((r) => r.to)]))]
   const showEr = related.length >= 2
   const showArch = !!bundle.architecture && audienceOf(bundle) !== 'non-technical'
-  if (!showEr && !showArch) return null
+  if (!hero && !showEr && !showArch) return null
   return (
-    <section className="mb-7">
-      <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-        <Map className="h-3.5 w-3.5" aria-hidden /> The system at a glance
-      </h2>
-      <div className="space-y-4">
-        {showEr && <Diagram dref={{ kind: 'er', title: 'Data model', scope: erScope }} />}
-        {showArch && <Diagram dref={{ kind: 'architecture', title: 'Architecture' }} />}
-      </div>
-    </section>
+    <>
+      {hero && (
+        <section className="mb-7">
+          <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+            <Route className="h-3.5 w-3.5" aria-hidden /> The life of {hero.subject}
+          </h2>
+          <TraceDiagram traceId={hero.id} />
+        </section>
+      )}
+      {(showEr || showArch) && (
+        <section className="mb-7">
+          <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+            <Map className="h-3.5 w-3.5" aria-hidden /> The system at a glance
+          </h2>
+          <div className="space-y-4">
+            {showEr && <Diagram dref={{ kind: 'er', title: 'Data model', scope: erScope }} />}
+            {showArch && <Diagram dref={{ kind: 'architecture', title: 'Architecture' }} />}
+          </div>
+        </section>
+      )}
+    </>
   )
 }

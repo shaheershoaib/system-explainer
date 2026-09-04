@@ -367,3 +367,63 @@ describe('validateBundle — persona, grounding, spot-the-bug', () => {
     if (!r.ok) expect(r.errors.join('\n')).toMatch(/misconception/i)
   })
 })
+
+describe('validateBundle — traces', () => {
+  function withTrace(): OnboardingBundle {
+    const b = minimalBundle()
+    b.architecture = { components: [{ id: 'core', name: 'Core', kind: 'service' }] }
+    b.traces = [
+      {
+        id: 'life-of-one-thing',
+        title: 'Thing lifecycle',
+        subject: 'one thing',
+        intro: 'follow it',
+        steps: [
+          { id: 's1', label: 'enqueue(thing)', component: 'core', actor: 'a1', entity: 'e1', note: 'enters here', sourcePath: 'src/queue.ts:10-12' },
+          { id: 's2', label: 'status = DONE', component: 'a plain description, not a component id', entity: 'e2' },
+        ],
+        outro: 'done',
+      },
+    ]
+    b.modules[0].lessons[0].blocks.unshift({ type: 'trace', traceId: 'life-of-one-thing' })
+    return b
+  }
+
+  it('accepts a valid trace, a block reference, and both id-shaped and free-text components', () => {
+    expect(validateBundle(withTrace()).ok).toBe(true)
+  })
+
+  it('rejects a trace block referencing a missing trace', () => {
+    const b = withTrace()
+    b.modules[0].lessons[0].blocks.push({ type: 'trace', traceId: 'ghost' })
+    const r = validateBundle(b)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.join('\n')).toMatch(/missing trace "ghost"/i)
+  })
+
+  it('rejects a step referencing a missing actor or entity', () => {
+    const b = withTrace()
+    b.traces![0].steps[0].actor = 'nobody'
+    b.traces![0].steps[1].entity = 'nothing'
+    const r = validateBundle(b)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.errors.join('\n')).toMatch(/step "s1" references missing actor "nobody"/)
+      expect(r.errors.join('\n')).toMatch(/step "s2" references missing entity "nothing"/)
+    }
+  })
+
+  it('rejects duplicate trace ids', () => {
+    const b = withTrace()
+    b.traces!.push(structuredClone(b.traces![0]))
+    const r = validateBundle(b)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.join('\n')).toMatch(/duplicate trace id/i)
+  })
+
+  it('rejects a trace with fewer than two steps (a trace is a sequence of hand-offs)', () => {
+    const b = withTrace()
+    b.traces![0].steps = [b.traces![0].steps[0]]
+    expect(validateBundle(b).ok).toBe(false)
+  })
+})

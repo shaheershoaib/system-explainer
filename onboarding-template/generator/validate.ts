@@ -167,6 +167,26 @@ export function validateBundle(input: unknown): ValidateResult {
     }
   }
 
+  // — traces ("the life of one X") —
+  const traceIds = (b.traces ?? []).map((t) => t.id)
+  flagDupes('trace', traceIds)
+  const traceSet = new Set(traceIds)
+  for (const m of b.modules)
+    for (const lesson of m.lessons)
+      for (const blk of lesson.blocks)
+        if (blk.type === 'trace' && !traceSet.has(blk.traceId))
+          errors.push(`module "${m.id}" references missing trace "${blk.traceId}"`)
+  for (const t of b.traces ?? []) {
+    flagDupes(`trace "${t.id}" step`, t.steps.map((s) => s.id))
+    for (const s of t.steps) {
+      // `component` is free text or an architecture component id; both are fine, so it is not checked.
+      if (s.actor && !actorSet.has(s.actor))
+        errors.push(`trace "${t.id}" step "${s.id}" references missing actor "${s.actor}"`)
+      if (s.entity && !entitySet.has(s.entity))
+        errors.push(`trace "${t.id}" step "${s.id}" references missing entity "${s.entity}"`)
+    }
+  }
+
   // — architecture + depth-layer block refs —
   const archComponents = b.architecture?.components ?? []
   flagDupes('architecture component', archComponents.map((c) => c.id))
