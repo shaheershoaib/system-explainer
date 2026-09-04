@@ -6,8 +6,10 @@ import { Markdown } from '../Markdown'
 import { Diagram } from '../diagrams/Diagram'
 import { PredictReveal } from './PredictReveal'
 import { Exercise } from './Exercise'
+import { CodeLines } from './CodeLines'
 import { SimulationPlayer } from '../sim/SimulationPlayer'
 import { ScreenWalkthrough } from '../screen/ScreenWalkthrough'
+import { TraceDiagram } from '../trace/TraceDiagram'
 import { useBundle } from '../../lib/useBundle'
 import { sourceUrl } from '../../lib/persona'
 
@@ -36,6 +38,8 @@ export function BlockRenderer({ block }: { block: Block }) {
       return <SimulationPlayer simulationId={block.simulationId} />
     case 'screen':
       return <ScreenWalkthrough screenId={block.screenId} />
+    case 'trace':
+      return <TraceDiagram traceId={block.traceId} title={block.title} />
     case 'code-map':
       return <CodeMap title={block.title} entries={block.entries} />
     case 'decisions':
@@ -216,8 +220,6 @@ function CodeSample({
   lineRange?: { start: number; end: number }
 }) {
   const bundle = useBundle()
-  const hl = new Set(highlightLines ?? [])
-  const lines = code.replace(/\n$/, '').split('\n')
   // Exact-verified snippets carry the source line range — deep-link to the very lines.
   const href = sourcePath
     ? (() => {
@@ -251,12 +253,7 @@ function CodeSample({
       )}
       <pre className="overflow-x-auto bg-[#1b1b22] py-2 text-[12.5px] leading-relaxed text-[#e7e7ef]" data-language={language}>
         <code>
-          {lines.map((ln, i) => (
-            <div key={i} className={clsx('px-3', hl.has(i + 1) && 'bg-accent-500/25')}>
-              <span className="mr-3 inline-block w-6 select-none text-right text-white/30">{i + 1}</span>
-              {ln || ' '}
-            </div>
-          ))}
+          <CodeLines code={code.replace(/\n$/, '')} language={language} highlightLines={highlightLines} />
         </code>
       </pre>
     </figure>

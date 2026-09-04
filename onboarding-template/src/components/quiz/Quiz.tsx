@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { CircleCheck, CircleX, ArrowUp, ArrowDown, Trophy } from 'lucide-react'
 import type { McqItem, OrderingItem, QuizItem, ShortAnswerItem, SpotBugItem } from '@schema/bundle'
 import { gradeShortAnswer } from '../../lib/progress'
+import { CodeLines } from '../blocks/CodeLines'
 
 // ── deterministic shuffle so layout is stable across renders but not author-order ──
 function mulberry32(seed: number) {
@@ -294,28 +295,30 @@ function SpotBugView({ item, onAnswer }: { item: SpotBugItem; onAnswer: (r: Quiz
       <p className="text-[15px] font-medium text-ink">{item.prompt}</p>
       <p className="mt-1 text-xs text-muted">Click the line you think contains the bug.</p>
       <div className="mt-3 overflow-hidden rounded-xl border border-line bg-[#1b1b22] py-2 font-mono text-[12.5px] leading-relaxed text-[#e7e7ef]">
-        {item.lines.map((ln, idx) => {
-          const lineNo = idx + 1
-          const isBug = lineNo === item.buggyLine
-          const state = picked == null ? 'idle' : isBug ? 'bug' : picked === lineNo ? 'wrongpick' : 'dim'
-          return (
-            <button
-              key={idx}
-              onClick={() => choose(lineNo)}
-              disabled={picked != null}
-              className={clsx(
-                'flex w-full items-start gap-3 px-3 text-left transition-colors',
-                state === 'idle' && 'hover:bg-white/10',
-                state === 'bug' && 'bg-emerald-500/25',
-                state === 'wrongpick' && 'bg-red-500/30',
-                state === 'dim' && 'opacity-60',
-              )}
-            >
-              <span className="w-6 shrink-0 select-none text-right text-white/30">{lineNo}</span>
-              <span className="whitespace-pre">{ln || ' '}</span>
-            </button>
-          )
-        })}
+        <CodeLines
+          code={item.lines.join('\n')}
+          language={item.language}
+          renderLine={({ lineNo, content }) => {
+            const isBug = lineNo === item.buggyLine
+            const state = picked == null ? 'idle' : isBug ? 'bug' : picked === lineNo ? 'wrongpick' : 'dim'
+            return (
+              <button
+                onClick={() => choose(lineNo)}
+                disabled={picked != null}
+                className={clsx(
+                  'flex w-full items-start gap-3 px-3 text-left transition-colors',
+                  state === 'idle' && 'hover:bg-white/10',
+                  state === 'bug' && 'bg-emerald-500/25',
+                  state === 'wrongpick' && 'bg-red-500/30',
+                  state === 'dim' && 'opacity-60',
+                )}
+              >
+                <span className="w-6 shrink-0 select-none text-right text-white/30">{lineNo}</span>
+                <span className="whitespace-pre">{content}</span>
+              </button>
+            )
+          }}
+        />
       </div>
       {picked != null && (
         <Feedback correct={picked === item.buggyLine}>
