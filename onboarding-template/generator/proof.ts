@@ -50,7 +50,7 @@ export function seededShuffle<T>(arr: T[], seed: string): T[] {
 }
 
 // ── learner view: render a module's lessons to text, no quiz, no answer leakage ─
-export function renderLessons(m: any): string {
+export function renderLessons(m: any, traces: any[] = []): string {
   const out: string[] = [`# ${m.title}`, '', `> ${m.objective || ''}`, '']
   for (const l of m.lessons || []) {
     out.push(`## ${l.title}`, '')
@@ -104,6 +104,19 @@ export function renderLessons(m: any): string {
         case 'exercise':
           out.push(`*Exercise (${b.kind}): ${b.prompt}*`, b.hint ? `_Hint: ${b.hint}_` : '', '')
           break
+        case 'trace': {
+          const t = traces.find((x) => x.id === b.traceId)
+          if (!t) break
+          out.push(`**${b.title || t.title}: the life of ${t.subject}**`, '')
+          if (t.intro) out.push(t.intro, '')
+          ;(t.steps || []).forEach((s: any, i: number) => {
+            const where = [s.component, s.actor].filter(Boolean).join(' / ')
+            out.push(`${i + 1}. ${s.label}${where ? ` (${where})` : ''}${s.note ? ` - ${s.note}` : ''}`)
+          })
+          out.push('')
+          if (t.outro) out.push(t.outro, '')
+          break
+        }
       }
     }
   }
@@ -171,7 +184,7 @@ export function buildGenQuiz(rawItems: any[], moduleId: string): { quiz: any[]; 
 }
 
 // ── claims: the assertions an adversarial refuter will try to break ───────────
-export function collectClaims(m: any): { id: string; text: string }[] {
+export function collectClaims(m: any, traces: any[] = []): { id: string; text: string }[] {
   const claims: { id: string; text: string }[] = []
   for (const l of m.lessons || [])
     for (let bi = 0; bi < (l.blocks || []).length; bi++) {
@@ -179,12 +192,28 @@ export function collectClaims(m: any): { id: string; text: string }[] {
       if (b.type === 'prose') claims.push({ id: `${l.id}-b${bi}`, text: b.md })
       else if (b.type === 'callout') claims.push({ id: `${l.id}-b${bi}`, text: `[${b.variant}] ${b.md}` })
       else if (b.type === 'mental-model' && b.md) claims.push({ id: `${l.id}-b${bi}`, text: b.md })
+      else if (b.type === 'trace') {
+        // Each step's note asserts something about the hand-off it labels; intro/outro frame the whole trace.
+        const t = traces.find((x) => x.id === b.traceId)
+        if (!t) continue
+        if (t.intro) claims.push({ id: `${l.id}-b${bi}-intro`, text: t.intro })
+        ;(t.steps || []).forEach((s: any, si: number) => {
+          if (s.note) claims.push({ id: `${l.id}-b${bi}-s${si}`, text: `[trace step ${si + 1}: ${s.label}${s.sourcePath ? ` @ ${s.sourcePath}` : ''}] ${s.note}` })
+        })
+        if (t.outro) claims.push({ id: `${l.id}-b${bi}-outro`, text: t.outro })
+      }
     }
   return claims
 }
-export function collectCitedPaths(m: any): string[] {
+// Trace steps cite `path` or `path:start-end`; the refuter opens files, so the line suffix is dropped.
+const pathOnly = (p: string) => p.replace(/:\d+(-\d+)?$/, '')
+export function collectCitedPaths(m: any, traces: any[] = []): string[] {
   const s = new Set<string>()
-  for (const l of m.lessons || []) for (const b of l.blocks || []) if (b.type === 'code' && b.sourcePath) s.add(b.sourcePath)
+  for (const l of m.lessons || [])
+    for (const b of l.blocks || []) {
+      if (b.type === 'code' && b.sourcePath) s.add(b.sourcePath)
+      if (b.type === 'trace') for (const st of traces.find((x) => x.id === b.traceId)?.steps || []) if (st.sourcePath) s.add(pathOnly(st.sourcePath))
+    }
   return [...s]
 }
 
@@ -367,13 +396,13 @@ function prep() {
         invalidated++
       }
     }
-    writeFileSync(path.join(dir, 'inputs', `${m.id}.lesson.md`), renderLessons(m))
+    writeFileSync(path.join(dir, 'inputs', `${m.id}.lesson.md`), renderLessons(m, bundle.traces || []))
     const { quiz, key } = buildLearnerQuiz(m)
     writeFileSync(path.join(dir, 'inputs', `${m.id}.quiz.json`), JSON.stringify({ moduleId: m.id, title: m.title, objective: m.objective, quiz }, null, 2))
     writeFileSync(path.join(dir, 'keys', `${m.id}.key.json`), JSON.stringify({ moduleId: m.id, key }, null, 2))
     writeFileSync(
       path.join(dir, 'inputs', `${m.id}.claims.json`),
-      JSON.stringify({ moduleId: m.id, title: m.title, objective: m.objective, citedPaths: collectCitedPaths(m), claims: collectClaims(m) }, null, 2),
+      JSON.stringify({ moduleId: m.id, title: m.title, objective: m.objective, citedPaths: collectCitedPaths(m, bundle.traces || []), claims: collectClaims(m, bundle.traces || []) }, null, 2),
     )
   }
   // The manifest is the single source of truth for which modules belong to THIS run;
@@ -385,7 +414,7 @@ function prep() {
   console.log(`✓ prepped ${mods.length} module(s) → ${path.relative(root, dir)}`)
   console.log(`  modules: ${mods.map((m) => m.id).join(', ')}${runModules.length !== mods.length ? ` (run manifest now covers ${runModules.length}: ${runModules.join(', ')})` : ''}`)
   if (invalidated) console.log(`  invalidated ${invalidated} stale agent output(s) from prior runs of these modules`)
-  const claimCount = mods.reduce((n, m) => n + collectClaims(m).length, 0)
+  const claimCount = mods.reduce((n, m) => n + collectClaims(m, bundle.traces || []).length, 0)
   console.log(`  ${claimCount} claim block(s) for adversarial verify · learner quizzes stripped + shuffled · manifest.json written`)
 }
 
@@ -562,17 +591,23 @@ function genprep() {
     for (const r of rejected) console.warn(`  ⚠ ${id}/${r.id} rejected: ${r.reason}`)
     dropped += rejected.length
     if (!quiz.length) continue
-    // a regenerated quiz invalidates any prior answers to the old one
-    for (const stale of [`learner-gen/${id}.json`, `learner-gen-cold/${id}.json`]) {
-      const p = path.join(dir, stale)
-      if (existsSync(p)) rmSync(p)
-    }
-    writeFileSync(path.join(dir, 'genquiz', `${id}.quiz.json`), JSON.stringify({ moduleId: id, title: m.title, objective: m.objective, quiz }, null, 2))
+    // A CHANGED quiz invalidates any prior answers to the old one. An unchanged quiz (same raw
+    // items, same deterministic shuffle) keeps them: re-prepping one module must not throw away
+    // the other modules' learner runs.
+    const quizPath = path.join(dir, 'genquiz', `${id}.quiz.json`)
+    const quizJson = JSON.stringify({ moduleId: id, title: m.title, objective: m.objective, quiz }, null, 2)
+    const unchanged = existsSync(quizPath) && readFileSync(quizPath, 'utf8') === quizJson
+    if (!unchanged)
+      for (const stale of [`learner-gen/${id}.json`, `learner-gen-cold/${id}.json`]) {
+        const p = path.join(dir, stale)
+        if (existsSync(p)) rmSync(p)
+      }
+    writeFileSync(quizPath, quizJson)
     writeFileSync(path.join(dir, 'genkeys', `${id}.key.json`), JSON.stringify({ moduleId: id, key }, null, 2))
     n++
     items += quiz.length
   }
-  console.log(`✓ gen-prepped ${n} module(s) · ${items} hardened question(s)${dropped ? ` · ${dropped} rejected` : ''} → genquiz/ + genkeys/ (answer keys held back; prior learner-gen answers invalidated)`)
+  console.log(`✓ gen-prepped ${n} module(s) · ${items} hardened question(s)${dropped ? ` · ${dropped} rejected` : ''} → genquiz/ + genkeys/ (answer keys held back; learner answers to any CHANGED quiz invalidated)`)
 }
 
 // Only run the CLI when executed directly (not when imported by the test).
