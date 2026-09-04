@@ -52,3 +52,17 @@ This release does not change what the product IS (the verifier that emits a cour
 - Hosting: `vite build` with the Pages base, `vite preview`, then a browser check that `/system-explainer/module/<id>` deep-links load and that the code blocks deep-link to `#L` ranges.
 - Proof: `PROOF_REPORT.md` regenerated from committed inputs; any refuted claim is fixed in `authored/zustand.ts` and the affected module re-proved.
 - Skill edits: the Phase 4 move is checked by diffing the moved text against the original (byte-identical apart from the new heading/pointer).
+
+## 6. Addendum, 3.1.0 polish (same day, after the 3.0.0 merge)
+
+Decided after a look at the deployed course as a first-time visitor would see it. Same rule as above: reversible, listed so it can be reversed.
+
+| # | Decision | Alternatives weighed | Why this one |
+|---|---|---|---|
+| D13 | **Architecture edges are numbered badges plus a legend**, not inline text labels. | Better inline label placement; a layout library. | The context diagram already uses a legend for the same reason; inline labels collide as soon as a component has three connections, and a legend generalises to any system. |
+| D14 | **ER ranks are ordered by a barycenter sweep** to reduce edge crossings, with a `countCrossings` helper under test. | dagre / elk. | A few dozen lines, deterministic, testable, no dependency; a full layout engine is the fallback if real courses outgrow it. |
+| D15 | **Syntax highlighting via prism-react-renderer** through one shared `CodeLines` component used by code blocks and the spot-the-bug quiz. | shiki (WASM, heavy); highlight.js; none. | Smallest well-maintained React-native option; keeps the line gutter and highlight rows the engine already has. |
+| D16 | **The trace becomes a first-class block and the landing hero** (`traces[]`, a `trace` block, a stepper renderer, rendered as text for the proof harness). The flagship course gains "the life of one set() call". | Leave the trace as a markdown artifact of the teaching phase only. | The skill's own 2.8 invariant says the trace is the model for unit-of-work systems; the engine had no way to show it. Content added to a module is re-proved before it ships. |
+| D17 | **Route-level code splitting and vendor chunks** so no chunk trips the 500 kB warning. | Replace react-markdown with a lighter renderer. | Splitting is behaviour-preserving; swapping the markdown renderer risks rendering differences in every lesson. |
+| D18 | **A static build skips the name gate** and enters as Guest; the gate stays when a progress API is configured. | Keep the gate with the guest button. | Identity only matters when there is a dashboard to report to; on the hosted demo the gate is pure friction. |
+| D19 | **Mobile and keyboard focus checked in the browser** at 375px; only glaring issues fixed. | A full accessibility audit. | Out of proportion for this pass; the check is recorded so the gap is known, not assumed closed. |

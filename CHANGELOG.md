@@ -2,6 +2,19 @@
 
 The living instructions are in [`SKILL.md`](SKILL.md) and [`references/course-generation.md`](references/course-generation.md); this file is the record of how they got here. Versions before 3.0.0 were developed privately; their entries are condensed.
 
+## 3.1.0 (2026-09-04): the polish a first visitor notices
+
+Decisions D13 to D19 in the design record. Nothing here changes what the tool proves; all of it changes whether someone who lands on the demo stays.
+
+- **Syntax highlighting** in every code block and in the spot-the-bug quiz (prism-react-renderer through one shared `CodeLines` component; line gutter and highlight rows unchanged).
+- **The trace is first-class.** New `traces[]` in the bundle, a `trace` block, a stepper renderer, and the landing hero shows "the life of one X" above the data model when a course declares one. The proof harness renders traces as text so every step is adversarially checked like any other claim. The flagship course gained "The life of one update" (one `set()` call from the caller through `Object.is`, merge-or-replace, listener notification and React's re-render), verified against source.
+- **Diagrams.** Architecture connections are numbered badges with a legend instead of colliding inline labels; ER ranks are ordered by a barycenter sweep so edges stop crossing unrelated nodes (crossing count under test).
+- **Smaller first load.** Route-level code splitting (dashboard, review) and vendor chunks; no chunk trips the 500 kB warning.
+- **A static build skips the name gate** and enters as Guest; the gate stays when a progress API is configured.
+- Mobile width and keyboard focus checked in the browser at 375px: diagrams keep a minimum width and scroll sideways instead of shrinking to a thumbnail, and every interactive element gets one visible focus ring.
+- The proof harness's `genprep` now invalidates learner answers only for quizzes that actually changed, so re-proving one module does not discard the other modules' learner runs.
+- The re-proof after adding the trace: react-binding 67 of 67 atomic claims supported (184 of 184 across the course); the one React-internal clause the skeptic could not verify was cut.
+
 ## 3.0.0 (2026-09-04): see it, install it, trust it
 
 The product did not change: system-explainer is still the verifier that emits a course. This release removes the reasons a visitor bounced before finding that out. Design record: [`docs/specs/2026-09-04-v3-release-design.md`](docs/specs/2026-09-04-v3-release-design.md).
