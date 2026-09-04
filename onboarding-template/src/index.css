@@ -34,6 +34,10 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Keyboard focus: one consistent, visible ring for every interactive element (inputs that
+   set `outline-none` already swap in a focus border). */
+:focus-visible { outline: 2px solid var(--color-accent-500); outline-offset: 2px; }
+
 /* Respect reduced-motion for the gamified bits. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }

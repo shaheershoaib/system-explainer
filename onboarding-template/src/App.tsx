@@ -1,11 +1,12 @@
-import { useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { BundleProvider, useBundle, useBundleState } from './lib/useBundle'
 import { HomePage } from './pages/HomePage'
 import { ModulePage } from './pages/ModulePage'
-import { ReviewPage } from './pages/ReviewPage'
-import { DashboardPage } from './pages/DashboardPage'
 import { LearnerGate, ProgressSync } from './components/LearnerGate'
+
+const ReviewPage = lazy(() => import('./pages/ReviewPage').then((m) => ({ default: m.ReviewPage })))
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
 
 function Centered({ children }: { children: ReactNode }) {
   return <div className="flex h-full items-center justify-center p-8 text-center">{children}</div>
@@ -23,13 +24,15 @@ function Course() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <ProgressSync />
-      <Routes>
-        <Route path="/" element={<LearnerGate><HomePage /></LearnerGate>} />
-        <Route path="/module/:moduleId" element={<LearnerGate><ModulePage /></LearnerGate>} />
-        <Route path="/review" element={<LearnerGate><ReviewPage /></LearnerGate>} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<Centered>Loading...</Centered>}>
+        <Routes>
+          <Route path="/" element={<LearnerGate><HomePage /></LearnerGate>} />
+          <Route path="/module/:moduleId" element={<LearnerGate><ModulePage /></LearnerGate>} />
+          <Route path="/review" element={<LearnerGate><ReviewPage /></LearnerGate>} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

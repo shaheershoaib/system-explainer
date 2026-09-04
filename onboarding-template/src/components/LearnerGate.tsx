@@ -10,7 +10,14 @@ export function LearnerGate({ children }: { children: ReactNode }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
 
+  // Static deployments have no progress backend to report a name to, so skip the form
+  // and identify the learner as a guest automatically.
+  useEffect(() => {
+    if (!hasApi && !progress.learner?.name) setLearner({ name: 'Guest' })
+  }, [progress.learner?.name, setLearner])
+
   if (progress.learner?.name) return <>{children}</>
+  if (!hasApi) return null
 
   return (
     <div className="flex min-h-full items-center justify-center p-6">

@@ -15,6 +15,23 @@ export default defineConfig({
       '@schema': path.resolve(__dirname, './schema'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split heavy, rarely-changing vendor code out of the main chunk so it can be
+        // cached separately and so no single chunk trips the 500 kB size warning.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (['react-markdown', 'remark-gfm', 'micromark', 'mdast', 'unified'].some((name) => id.includes(name))) {
+            return 'vendor-markdown'
+          }
+          if (['react', 'react-dom', 'react-router'].some((name) => id.includes(`/node_modules/${name}/`))) {
+            return 'vendor-react'
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5174,
     strictPort: true,
