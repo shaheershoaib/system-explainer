@@ -1,0 +1,8 @@
+{
+  "name": "teaching-knowledge-base",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-dependency MCP server that enforces the schema of every append to a system-explainer knowledge base.",
+  "engines": { "node": ">=20" }
+}
