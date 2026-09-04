@@ -1,0 +1,122 @@
+{
+  "moduleId": "vanilla-store",
+  "title": "The store, from scratch",
+  "objective": "Understand what a zustand store actually is — a closure over a state value and a Set of listeners — and how set/get/subscribe work, with zero React involved.",
+  "quiz": [
+    {
+      "id": "g1",
+      "type": "mcq",
+      "prompt": "In this codebase (zustand 5.x), `createStore` builds an `api` object literal and returns it. Which list is EXACTLY the set of methods on that object, nothing more and nothing less?",
+      "options": [
+        {
+          "key": "a",
+          "text": "`setState`, `getState`, `subscribe`, `getSnapshot`"
+        },
+        {
+          "key": "b",
+          "text": "`setState`, `getState`, `getInitialState`, `dispatch`"
+        },
+        {
+          "key": "c",
+          "text": "`setState`, `getState`, `subscribe`, `destroy`"
+        },
+        {
+          "key": "d",
+          "text": "`setState`, `getState`, `getInitialState`, `subscribe`"
+        }
+      ]
+    },
+    {
+      "id": "g2",
+      "type": "mcq",
+      "prompt": "The store holds `{ value: 1, other: 'a' }` and one listener is subscribed. You call `setState({ value: 1 })` with no second argument. What happens?",
+      "options": [
+        {
+          "key": "a",
+          "text": "The listener runs once: the guard compares the partial's reference to the current state before any merge, so a fresh object never bails out even with identical content"
+        },
+        {
+          "key": "b",
+          "text": "Nothing happens: the merge runs first and yields an object whose contents equal the current state, so the guard treats the update as unchanged and never notifies"
+        },
+        {
+          "key": "c",
+          "text": "Nothing happens: the guard shallow-compares each top-level key of the partial against the current state, finds `value` unchanged, and skips the update"
+        },
+        {
+          "key": "d",
+          "text": "The listener runs once, but receives the same state reference for both arguments, because merging a key that did not change returns the existing object"
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "type": "mcq",
+      "prompt": "State is `{ nested: { count: 0, label: 'x' }, other: 5 }`. You call `set((s) => ({ nested: { count: s.nested.count + 1 } }))`. What is the state afterwards?",
+      "options": [
+        {
+          "key": "a",
+          "text": "`{ nested: { count: 1, label: 'x' }, other: 5 }`"
+        },
+        {
+          "key": "b",
+          "text": "`{ nested: { count: 1 }, other: 5 }`"
+        },
+        {
+          "key": "c",
+          "text": "`{ nested: { count: 1, label: 'x' } }`"
+        },
+        {
+          "key": "d",
+          "text": "`{ nested: { count: 1 }, label: 'x', other: 5 }`"
+        }
+      ]
+    },
+    {
+      "id": "g4",
+      "type": "mcq",
+      "prompt": "State is the object `{ a: 1 }`. Which single call leaves `getState()` returning exactly `null` afterwards?",
+      "options": [
+        {
+          "key": "a",
+          "text": "`setState({}, true)`, passing an explicit `replace` of true"
+        },
+        {
+          "key": "b",
+          "text": "`setState((s) => ({ ...s, a: null }))`, passing no `replace`"
+        },
+        {
+          "key": "c",
+          "text": "`setState(null)`, passing no second `replace` argument at all"
+        },
+        {
+          "key": "d",
+          "text": "`setState(null, false)`, passing an explicit `replace` of false"
+        }
+      ]
+    },
+    {
+      "id": "g5",
+      "type": "mcq",
+      "prompt": "You create `createStore(() => initial)` with `initial = { value: 1 }`, then call `setState({ value: 2 })` and later `setState({ value: 3 })`. What does `getInitialState()` return now, and what does calling it cost?",
+      "options": [
+        {
+          "key": "a",
+          "text": "A structural clone of `{ value: 1 }` taken at creation time, so it is equal to `initial` but never the identical object"
+        },
+        {
+          "key": "b",
+          "text": "The current state `{ value: 3 }`, because the initial snapshot is re-pointed at the newest state on every successful set"
+        },
+        {
+          "key": "c",
+          "text": "A fresh `{ value: 1 }` produced by re-invoking the state creator, so each call runs your initializer one more time"
+        },
+        {
+          "key": "d",
+          "text": "The very same `initial` object reference captured when the creator ran; the state creator is never invoked again"
+        }
+      ]
+    }
+  ]
+}

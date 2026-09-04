@@ -1,0 +1,122 @@
+{
+  "moduleId": "middleware-and-code",
+  "title": "Middleware, the codebase & architecture",
+  "objective": "Learn the one shape every middleware shares (wrap the state creator; wrap set and/or patch the api), tour persist/devtools/immer/redux, then map every concept to the real files and the architecture so you can navigate and extend the code.",
+  "quiz": [
+    {
+      "id": "g1",
+      "type": "mcq",
+      "prompt": "The module frames the sync between the creator's wrapped `set` and `api.setState` as holding 'by convention, not by construction', and names exactly ONE shipped code path that wraps `set` while leaving `api.setState` alone. Which path is it?",
+      "options": [
+        {
+          "key": "a",
+          "text": "persist when `createJSONStorage` yields no storage (e.g. no `window.localStorage`): it hands the creator a console.warn-wrapped `set` and returns early without reassigning `api.setState`."
+        },
+        {
+          "key": "b",
+          "text": "subscribeWithSelector: it wraps the creator's `set` so slice listeners receive previous and next slices, and it only ever overrides `api.subscribe`, never touching `api.setState`."
+        },
+        {
+          "key": "c",
+          "text": "devtools when the Redux DevTools extension is not detected: it still wraps the creator's `set` to label actions but skips reassigning `api.setState` because there is no connection to report to."
+        },
+        {
+          "key": "d",
+          "text": "ssrSafe on the server: it swaps a throwing setter in for the creator's `set` but leaves `api.setState` as the vanilla setter so that framework hydration code can still write state."
+        }
+      ]
+    },
+    {
+      "id": "g2",
+      "type": "mcq",
+      "prompt": "The module insists devtools is 'not inspection-only': it subscribes to the Redux DevTools extension and writes state back into the store through `setStateFromDevtools`, which is what makes time-travel work. Which extension messages does the module list as triggering that write-back?",
+      "options": [
+        {
+          "key": "a",
+          "text": "COMMIT, ROLLBACK, JUMP_TO_STATE / JUMP_TO_ACTION, and PAUSE_RECORDING"
+        },
+        {
+          "key": "b",
+          "text": "RESET, ROLLBACK, JUMP_TO_STATE / JUMP_TO_ACTION, and IMPORT_STATE"
+        },
+        {
+          "key": "c",
+          "text": "RESET, ROLLBACK, COMMIT, IMPORT_STATE, and PAUSE_RECORDING"
+        },
+        {
+          "key": "d",
+          "text": "RESET, COMMIT, JUMP_TO_STATE / JUMP_TO_ACTION, and IMPORT_STATE"
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "type": "mcq",
+      "prompt": "A new release adds `settings.theme: 'light'` to the initial state of a persist-wrapped store. Persist options are otherwise default (same `version`, no custom `merge`, no `migrate`). A returning user has an older persisted blob whose `settings` object lacks `theme`. Per the module, what is `getState().settings.theme` after rehydration, and why?",
+      "options": [
+        {
+          "key": "a",
+          "text": "`'light'`: the default `merge` recurses into nested objects, filling in keys the persisted blob lacks while keeping the user's stored values for every key the blob does have."
+        },
+        {
+          "key": "b",
+          "text": "`'light'`: the default `merge` spreads the current state over the persisted state, so code defaults win on any key collision and only brand-new stored keys are added on top."
+        },
+        {
+          "key": "c",
+          "text": "`undefined`: persist rehydrates with `set(stored, true)`, and that replace flag wipes every key absent from the blob, including the whole `settings` default object."
+        },
+        {
+          "key": "d",
+          "text": "`undefined`: the default `merge` shallow-spreads the persisted state over the current state, so the stored `settings` object replaces the whole nested default, dropping the new key."
+        }
+      ]
+    },
+    {
+      "id": "g4",
+      "type": "mcq",
+      "prompt": "The module's TypeScript gotcha says to write `create<BearState>()(devtools(persist(...)))` with an extra empty `()`. What is the module's explanation for why the single-call form `create<BearState>(devtools(persist(...)))` fails to type-check?",
+      "options": [
+        {
+          "key": "a",
+          "text": "The single-call overload is only declared on the vanilla `createStore`; the React `create` binding requires the curried overload whenever middleware is composed, because the middleware mutators attach to the hook's own type."
+        },
+        {
+          "key": "b",
+          "text": "devtools must sit outermost so it can add its action-name parameter to `setState`; the extra `()` is what applies the middleware chain outermost-first so that parameter is not lost when immer or persist also patch `setState`."
+        },
+        {
+          "key": "c",
+          "text": "Generic inference is all-or-nothing: with BearState written explicitly, the middleware mutator list stops being inferred and defaults to `[]`, so the middleware types no longer line up; the extra `()` separates annotation from inference."
+        },
+        {
+          "key": "d",
+          "text": "The state generic is contravariant through `set`, so the compiler needs the second call to infer BearState from the creator's return value rather than from the annotation; the extra `()` defers that inference until the creator is seen."
+        }
+      ]
+    },
+    {
+      "id": "g5",
+      "type": "mcq",
+      "prompt": "The module's first-task exercise: you want a store hook that re-renders using a CUSTOM equality function rather than Object.is. Following the module's concept-to-code map and architecture section, what do you reach for, and which external dependency does that path alone pull in?",
+      "options": [
+        {
+          "key": "a",
+          "text": "`createWithEqualityFn` from `zustand/traditional` (src/traditional.ts): the one binding built on the `use-sync-external-store` with-selector shim, which is why that package is an optional peer dependency."
+        },
+        {
+          "key": "b",
+          "text": "`subscribeWithSelector` from `zustand/middleware` (src/middleware/subscribeWithSelector.ts): its `equalityFn` option is the only custom-equality hook, and it requires `immer` as an optional peer."
+        },
+        {
+          "key": "c",
+          "text": "`useShallow` from `zustand/shallow` (src/react/shallow.ts): the one helper that imports the `use-sync-external-store` shim, using it to memoize the selected slice between renders of the component."
+        },
+        {
+          "key": "d",
+          "text": "`create` from `zustand`, passing `equalityFn` as the third argument of `useStore` (src/react.ts): that path lazily loads the `use-sync-external-store` shim only to run the custom comparison."
+        }
+      ]
+    }
+  ]
+}

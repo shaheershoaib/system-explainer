@@ -1,0 +1,122 @@
+{
+  "moduleId": "selectors-rerenders",
+  "title": "Selectors & re-renders",
+  "objective": "Master the one render-performance rule in zustand: a component re-renders when its selected slice changes by Object.is — and learn when you need useShallow or a custom equality fn.",
+  "quiz": [
+    {
+      "id": "g1",
+      "type": "mcq",
+      "prompt": "Using `create` from `zustand` in v5, `BearNames` selects `useMeals((state) => Object.keys(state))`. The app mounts and nothing in the store is ever changed: no `set`, no `setState`. According to the module, what happens to `BearNames`?",
+      "options": [
+        {
+          "key": "a",
+          "text": "It renders once and settles; React bails out because `Object.keys` yields the same three strings, which the store hook compares element-by-element before deciding whether to schedule a re-render."
+        },
+        {
+          "key": "b",
+          "text": "It renders once and settles; the fresh array only costs an unnecessary re-render later, each time some unrelated key such as `papaBear` is set, exactly as the prevent-rerenders guide describes the symptom."
+        },
+        {
+          "key": "c",
+          "text": "It renders twice and then settles: `useSyncExternalStore` re-reads the snapshot once after mount, sees a new array, re-renders, and then stops because the store itself never notified any listener."
+        },
+        {
+          "key": "d",
+          "text": "It never settles: the selector returns a new array each call, the default `Object.is` check fails every time, and it loops until React throws 'Maximum update depth exceeded', with no store change needed to trigger it."
+        }
+      ]
+    },
+    {
+      "id": "g2",
+      "type": "mcq",
+      "prompt": "The same `Object.keys(state)` selector was merely wasteful in zustand v4 but loops in v5. According to the module, why did v4 behave differently, and what does the v5 migration guide point to if you need the v4 behavior back?",
+      "options": [
+        {
+          "key": "a",
+          "text": "v4's `create` ran selectors inside React's render phase, capping the loop at one extra pass; for v4 behavior the guide points to `useStoreWithEqualityFn` imported from `zustand/react/shallow`."
+        },
+        {
+          "key": "b",
+          "text": "v4's `create` compared the whole store snapshot rather than the selected slice, so an unstable slice was irrelevant; for v4 behavior the guide points to `subscribeWithSelector` with `{ equalityFn: shallow }`."
+        },
+        {
+          "key": "c",
+          "text": "v4's `create` memoized the selection per store snapshot, so an unstable result cost only unnecessary re-renders; for v4 behavior the guide points to `createWithEqualityFn` from `zustand/traditional`."
+        },
+        {
+          "key": "d",
+          "text": "v4's `create` used `shallow` rather than `Object.is` as its default comparison, so fresh arrays compared equal; for v4 behavior the guide points to passing `shallow` as the second argument of `create`."
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "type": "mcq",
+      "prompt": "Per the `src/react/shallow.ts` source shown in the module, what does `useShallow(selector)` actually return, and by what mechanism does it prevent the re-render?",
+      "options": [
+        {
+          "key": "a",
+          "text": "A wrapped selector that keeps the last slice in a ref; when `shallow(prev, next)` is true it returns the PREVIOUS reference so the store hook's `Object.is` check passes, otherwise it stores and returns the new slice."
+        },
+        {
+          "key": "b",
+          "text": "A wrapped selector memoized with `useMemo` keyed on `api.getState()`, so the selector body executes once per store snapshot and the identical array is handed back until the snapshot reference changes."
+        },
+        {
+          "key": "c",
+          "text": "The selected slice itself: it calls `useSyncExternalStore` internally, re-running the selector only when the store snapshot changes, and returns the memoized result directly to the component that called it."
+        },
+        {
+          "key": "d",
+          "text": "A wrapped selector that switches the bound hook's comparison from `Object.is` to `shallow` for that subscription, so equal-but-distinct slices skip the render while the selector output itself is passed through untouched."
+        }
+      ]
+    },
+    {
+      "id": "g4",
+      "type": "mcq",
+      "prompt": "Store: `{ nuts: 0, honey: 0, treats: {} }`. Component A uses `useShallow((s) => [s.nuts, s.honey])`; component B uses `useShallow((s) => ({ treats: s.treats }))`. An action runs `set({ treats: { ...get().treats } })`, a new object with identical contents. Which components re-render?",
+      "options": [
+        {
+          "key": "a",
+          "text": "Neither: `shallow` recurses one level into nested plain objects, so a content-identical `treats` counts as equal, and A's array values are unchanged, so both components keep their previous slice."
+        },
+        {
+          "key": "b",
+          "text": "Only B: `shallow` checks one level, same keys then `Object.is` per value, so the new `treats` reference fails; A's two values are unchanged, so `useShallow` returns its previous array and A is skipped."
+        },
+        {
+          "key": "c",
+          "text": "Both: every `set` notifies all subscribers and zustand does not compare selector outputs for object or array slices, so any store update re-renders both components regardless of what changed."
+        },
+        {
+          "key": "d",
+          "text": "Only A: arrays are compared element-by-element with `Object.is`, while plain objects are compared structurally, so B's spread copy of `treats` counts as equal but A's freshly built array does not."
+        }
+      ]
+    },
+    {
+      "id": "g5",
+      "type": "mcq",
+      "prompt": "A component does `const { nuts } = useBearStore((state) => state)` and renders only `nuts`. Another component then sets `honey`. With `create` in v5, what does the module's render rule predict for the first component?",
+      "options": [
+        {
+          "key": "a",
+          "text": "It never settles: an identity selector returns the store's state object, which counts as an unstable reference, so the `Object.is` gate fails on every check and React throws 'Maximum update depth exceeded' as with a fresh array."
+        },
+        {
+          "key": "b",
+          "text": "It does not re-render: zustand records that only `nuts` was read during render and skips the update, because the `honey` change touched a field the component never accessed; that is how it optimizes renders by property access."
+        },
+        {
+          "key": "c",
+          "text": "It re-renders once and then unsubscribes from `honey`: after the first wasted render the hook narrows its subscription to the destructured keys, so subsequent `honey` changes no longer reach the component at all."
+        },
+        {
+          "key": "d",
+          "text": "It re-renders: zustand does not track which fields you read, and `set` produced a new state object, so the selected slice (the whole state) fails `Object.is`; it does not loop, because that reference is stable until the next `set`."
+        }
+      ]
+    }
+  ]
+}

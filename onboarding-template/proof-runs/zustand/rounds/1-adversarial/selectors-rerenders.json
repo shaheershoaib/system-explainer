@@ -1,0 +1,119 @@
+{
+  "moduleId": "selectors-rerenders",
+  "claims": [
+    {
+      "claim": "zustand does not track which fields a component reads (no property-access tracking in the create/useStore path).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:26-37: useStore's snapshot is simply selector(api.getState()); src/vanilla.ts:60-97: state is a plain closure variable with no Proxy (`git grep Proxy -- src` returns nothing). docs/learn/getting-started/comparison.md:267-270: 'Valtio makes render optimizations through property access. However, with Zustand, it is recommended that you manually apply render optimizations by using selectors.'",
+      "note": "Source claim id sr-default-b0."
+    },
+    {
+      "claim": "Valtio, by contrast, optimizes renders by tracking property access.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/comparison.md:265-270 ('Render Optimization (vs Valtio)': 'Valtio makes render optimizations through property access').",
+      "note": "Source claim id sr-default-b0."
+    },
+    {
+      "claim": "MobX, by contrast, tracks which fields you read.",
+      "verdict": "unverifiable",
+      "evidence": "Nothing in the repo discusses MobX's model: `grep -rniE mobx docs README.md` hits only docs/reference/integrations/third-party-libraries.md:30 (the 'mobz' third-party library). docs/learn/getting-started/comparison.md:10 compares only Redux, Valtio, Jotai and Recoil.",
+      "note": "Source claim id sr-default-b0. Statement about an external library that this repo neither supports nor contradicts."
+    },
+    {
+      "claim": "The developer chooses the slice by passing a selector to the store hook / useStore.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:21-28 useStore(api, selector = identity); src/react.ts:56 useBoundStore(selector) => useStore(api, selector); README.md:45-56 and 84-91.",
+      "note": "Source claim id sr-default-b0."
+    },
+    {
+      "claim": "With create/useStore the component re-renders only when the selected slice changes according to Object.is.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-34: useStore passes () => selector(api.getState()) as the snapshot to React.useSyncExternalStore and supplies no equality function of its own, so React's built-in Object.is snapshot comparison decides re-renders. docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 ('rerender if the output has changed according to Object.is'); docs/reference/hooks/use-shallow.md:271 ('the default equality check is Object.is'); docs/reference/apis/create-with-equality-fn.md:49 ('Defaults to Object.is'). tests/basic.test.tsx:131-164: after one inc(), Counter (selects count) rendered twice while Control (selects inc) rendered once.",
+      "note": "Source claim id sr-default-b0. The Object.is comparison is React's (useSyncExternalStore), not code in this repo (corroborated out-of-repo in react-dom 18.3.1, where checkIfSnapshotChanged uses objectIs). The course gloss 'strict reference equality' and README.md:86's 'strict-equality (old === new)' are loose: Object.is is SameValue and differs from === only for NaN and +0/-0 (the store's own setState guard is Object.is, src/vanilla.ts:73; tests/basic.test.tsx:459-468)."
+    },
+    {
+      "claim": "Narrow (atomic) selectors cause fewer re-renders than selecting the whole state.",
+      "verdict": "supported",
+      "evidence": "README.md:76-82 ('Fetching everything ... will cause the component to update on every state change'); README.md:86 ('strict-equality ... efficient for atomic state picks'); tests/basic.test.tsx:131-164 (Control, selecting only inc, did not re-render when count changed).",
+      "note": "Source claim id sr-default-b0."
+    },
+    {
+      "claim": "A selector that builds a new object or array on every call is the single most common zustand performance bug.",
+      "verdict": "unverifiable",
+      "evidence": "No ranking of performance bugs exists anywhere in the repo. Closest text: docs/reference/hooks/use-shallow.md:271 calls bundling multiple values into one object inside the selector 'the most common case' of the v5 'Maximum update depth exceeded' error, which is a thrown error, not a re-render-count bug.",
+      "note": "Source claim id sr-trap-b0."
+    },
+    {
+      "claim": "Because Object.is compares object references, a newly constructed object or array is never Object.is-equal to the previous one.",
+      "verdict": "supported",
+      "evidence": "docs/reference/apis/shallow.md:96-109 (Object.is(objectLeft, objectRight) -> false for equal-content objects); docs/reference/hooks/use-shallow.md:280 ('The wrapper object is recreated on every render, so each comparison fails'); docs/reference/migrations/migrating-to-v5.md:95-96.",
+      "note": "Source claim id sr-trap-b0."
+    },
+    {
+      "claim": "The consequence of such a fresh-object selector (with create in v5) is that the component re-renders on every store change, even unrelated ones.",
+      "verdict": "refuted",
+      "evidence": "The repo documents a different and worse consequence: an infinite update loop that throws. docs/reference/migrations/migrating-to-v5.md:93-112 ('Requiring stable selector outputs ... If a selector returns a new reference, it may cause infinite loops ... Uncaught Error: Maximum update depth exceeded'); docs/reference/hooks/use-shallow.md:269-280 ('Since v5, selectors that return a new reference on every render can trigger infinite update loops because the default equality check is Object.is ... the component re-subscribes in a loop'). Mechanism: src/react.ts:30-34 hands the fresh object to React.useSyncExternalStore as the snapshot, and React's post-commit consistency check (Object.is against a fresh getSnapshot()) always sees a new value and forces another render, independent of any store change (corroborated out-of-repo in react-dom 18.3.1 checkIfSnapshotChanged/updateStoreInstance and its dev warning 'The result of getSnapshot should be cached to avoid an infinite loop').",
+      "note": "Source claim id sr-trap-b0. The 'one extra re-render per store change' failure mode the course describes is the v4 / createWithEqualityFn (zustand/traditional) behavior, where use-sync-external-store's with-selector shim caches the selection per store snapshot; migrating-to-v5.md:146-151 offers createWithEqualityFn precisely 'if you need v4 behavior'. The course targets create in v5.0.15 (package.json:6), where the symptom is a thrown 'Maximum update depth exceeded' error."
+    },
+    {
+      "claim": "useShallow keeps a ref to the last returned slice.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:5 `const prev = React.useRef<U>(undefined)`; src/react/shallow.ts:10 `prev.current = next`.",
+      "note": "Source claim id sr-shallow-b0."
+    },
+    {
+      "claim": "When the new slice is shallow-equal to the previous one, useShallow returns the previous slice object (the same reference).",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:7-10: `shallow(prev.current, next) ? prev.current : (prev.current = next)`; tests/shallow.test.tsx:91-119 ('returns the previously computed instance when possible', expect(output2).toBe(output1)).",
+      "note": "Source claim id sr-shallow-b0."
+    },
+    {
+      "claim": "Because the same reference is returned, React sees no snapshot change and skips the re-render.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-34: the useShallow-wrapped selector's return value is the useSyncExternalStore snapshot, so an identical reference passes React's Object.is check. tests/shallow.test.tsx:121-158: with useShallow(Object.keys), setState({a:4}) leaves countRenders at 1 and setState({d:10}) bumps it to 2. docs/reference/migrations/migrating-to-v5.md:114 ('useShallow hook, which will return a stable reference'); docs/reference/hooks/use-shallow.md:39-40 and 187-188.",
+      "note": "Source claim id sr-shallow-b0."
+    },
+    {
+      "claim": "The comparison useShallow performs is the shallow function.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:2 `import { shallow } from '../vanilla/shallow.ts'`; src/react/shallow.ts:8 `shallow(prev.current, next)`.",
+      "note": "Source claim id sr-shallow-b0."
+    },
+    {
+      "claim": "shallow checks one level deep only.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:48-74: after Object.is (:49-51), type/null (:52-58) and prototype (:60-62) checks, values are compared with Object.is per entry (compareEntries :22) or per element (compareIterables :39); shallow never calls itself recursively. tests/vanilla/shallow.test.tsx:35-37: two arrays of equal-content but distinct nested objects -> false. docs/reference/apis/shallow.md:7-9 and 160-162.",
+      "note": "Source claim id sr-shallow-b0."
+    },
+    {
+      "claim": "The default equality check for create/useStore is Object.is, a single comparison.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-34 supplies no equality function to React.useSyncExternalStore (React's default Object.is applies); docs/learn/guides/prevent-rerenders-with-use-shallow.md:9; docs/reference/hooks/use-shallow.md:271; docs/reference/apis/create-with-equality-fn.md:49 ('Defaults to Object.is').",
+      "note": "Source claim id sr-shallow-b2. README.md:86 phrases the default as 'strict-equality (old === new)'; the actual check performed by React is Object.is."
+    },
+    {
+      "claim": "useShallow's check on plain objects is a one-level structural check: same key set, and Object.is on each value.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:69-73 routes plain objects to compareEntries over Object.entries; compareEntries (:12-27) requires equal entry count (:18), every key of A present in B (:22 mapB.has(key)), and Object.is(value, mapB.get(key)) (:22). tests/vanilla/shallow.test.tsx:16-27 (different key set -> false; extra key -> false) and :175-177 ({a: undefined} vs {b: 1} -> false).",
+      "note": "Source claim id sr-shallow-b2. This is the plain-object case; shallow is broader than the course states: arrays and other ordered iterables are compared element-by-element in order (compareIterables :30-46; tests/vanilla/shallow.test.tsx:30-43, [1,2,3] vs [2,3,1] -> false), Map/Set-like iterables with entries() go through compareEntries (:63-66), and values with different prototypes are unequal before any key check (:60-62; docs/reference/apis/shallow.md:229-248). Only own enumerable string keys are compared (Object.entries)."
+    },
+    {
+      "claim": "shallow does not recurse: a nested object whose identity changed counts as different even if its contents are equal.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:22 and :39 compare values with Object.is, never by calling shallow recursively; tests/vanilla/shallow.test.tsx:35-37 `shallow([{foo:'bar'},{asd:123}], [{foo:'bar'},{asd:123}])` -> false; docs/reference/apis/shallow.md:158-203 (identical-content nested `address` object -> false).",
+      "note": "Source claim id sr-shallow-b2."
+    },
+    {
+      "claim": "The README points to a custom equality function via createWithEqualityFn for finer control than shallow.",
+      "verdict": "supported",
+      "evidence": "README.md:120-127: 'For more control over re-rendering, you may provide any custom equality function (this example requires the use of createWithEqualityFn ...)', linking docs/reference/migrations/migrating-to-v5.md#using-custom-equality-functions-such-as-shallow.",
+      "note": "Source claim id sr-shallow-b3. The README says 'more control over re-rendering', not literally 'beyond shallow'. Its example (README.md:123-126) uses the two-argument useBearStore(selector, equalityFn) call shape, which only a createWithEqualityFn-created hook accepts (src/traditional.ts:47-53 vs src/react.ts:39-42)."
+    },
+    {
+      "claim": "createWithEqualityFn is provided by the zustand/traditional entry point.",
+      "verdict": "supported",
+      "evidence": "src/traditional.ts:82-88 exports createWithEqualityFn (and useStoreWithEqualityFn at :21-45); docs/reference/migrations/migrating-to-v5.md:15, 64 and 150 (`import { createWithEqualityFn as create } from 'zustand/traditional'`); docs/reference/apis/create-with-equality-fn.md:13-14 and 68; package.json:43-56 wildcard './*' export plus package.json:74 build:traditional and rollup.config.mjs:94-103 mapping --config-traditional to src/traditional.ts -> dist/traditional.js; tests/shallow.test.tsx:6 imports it from 'zustand/traditional'.",
+      "note": "Source claim id sr-shallow-b3. README.md itself never names 'zustand/traditional'; that path comes from the linked migration doc. The docs attach a prerequisite the tip omits: use-sync-external-store must be installed as a peer dependency (package.json:162-163; migrating-to-v5.md:15 and 58-60; create-with-equality-fn.md:12-14). createWithEqualityFn is a store-creator variant, not a middleware (src/traditional.ts:66-80 mirrors src/react.ts:53-61); the 'covered in the middleware/architecture module' remark is course navigation, not a code claim, and was not graded."
+    }
+  ]
+}

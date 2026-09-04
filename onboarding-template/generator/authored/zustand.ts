@@ -2,7 +2,7 @@
  * Authored onboarding bundle for **zustand** — the 🐻 bear-necessities state
  * manager for React (and vanilla JS).
  *
- * Grounded entirely in a cold read of /tmp/zustand-proto:
+ * Grounded entirely in a cold read of the pmndrs/zustand repository (pinned commit in the bundle's grounding record):
  *   - src/vanilla.ts          → the store: state + Set<Listener>, set/get/subscribe
  *   - src/react.ts            → create() + useStore() over React.useSyncExternalStore
  *   - src/vanilla/shallow.ts  → shallow(a, b) equality
@@ -26,10 +26,10 @@ const bundle = {
     oneLiner:
       'zustand is a small state-management library: you `create` a store holding state plus the functions that update it, components subscribe with a selector, and the store re-renders only the components whose selected slice actually changed.',
     elevatorPitch:
-      'A store in zustand is just a closure over a `state` value and a `Set` of listener callbacks. `set` computes the next state, bails out if it is the same reference (`Object.is`), shallow-merges it in, and notifies every listener. In React, `create` wraps that store in a hook backed by `useSyncExternalStore`; the selector you pass picks a slice and the component re-renders only when that slice changes. There are no providers, no reducers, and no boilerplate — but the trade-off is that render optimization is manual: you choose what to select and when to use `useShallow`.',
+      'A store in zustand is just a closure over a `state` value and a `Set` of listener callbacks. `set` computes the next state, bails out if it is the same reference (`Object.is`), shallow-merges it in (or replaces it outright when you pass the `replace` flag), and notifies every listener. In React, `create` wraps that store in a hook backed by `useSyncExternalStore`; the selector you pass picks a slice and the component re-renders only when that slice changes. There are no providers, no reducers, and no boilerplate — but the trade-off is that render optimization is manual: you choose what to select and when to use `useShallow`.',
     outOfScope: [
       'zustand does not deep-merge — `set` merges only one level; nested objects you must spread yourself.',
-      'zustand does not auto-track which fields a component reads (unlike Valtio/MobX proxies) — you opt into render optimization with selectors.',
+      'zustand does not auto-track which fields a component reads (unlike Valtio, whose proxy optimizes renders through property access, per the comparison doc) — you opt into render optimization with selectors.',
       'zustand does not require a Provider or context — the store is a module-level singleton you import directly.',
       'The core (`zustand/vanilla`) has no React dependency; React bindings live in `zustand/react`.',
     ],
@@ -48,7 +48,7 @@ const bundle = {
       relationships: [
         { to: 'react', label: 'renders components that subscribe to the store' },
         { to: 'storage', label: 'persists store state via the persist middleware' },
-        { to: 'devtools-ext', label: 'inspects actions via the devtools middleware' },
+        { to: 'devtools-ext', label: 'inspects actions and time-travels state via the devtools middleware' },
       ],
     },
     {
@@ -87,7 +87,7 @@ const bundle = {
       definition:
         'The live object returned by createStore. It is a closure over a single `state` value and a `Set` of listeners, exposing exactly four methods: setState, getState, getInitialState, and subscribe. Everything else in zustand is built on top of this.',
       fields: [
-        { name: 'setState', example: 'set(partial, replace?)', note: 'Computes next state, bails on Object.is, merges one level, notifies listeners' },
+        { name: 'setState', example: 'set(partial, replace?)', note: 'Computes next state, bails on Object.is, merges one level (or replaces), notifies listeners' },
         { name: 'getState', example: '() => state', note: 'Returns the current state synchronously, non-reactively' },
         { name: 'getInitialState', example: '() => initialState', note: 'The state captured when the store was created' },
         { name: 'subscribe', example: '(listener) => unsubscribe', note: 'Adds a listener; returns a function that deletes it' },
@@ -182,7 +182,7 @@ const bundle = {
       id: 'shallow-fn',
       name: 'shallow / useShallow',
       definition:
-        'shallow(a, b) is an equality function that compares two values one level deep (keys/values for objects, element-by-element for iterables, entries for Map/Set). useShallow(selector) wraps a selector so it returns the previous reference when the new slice is shallow-equal — preventing a re-render when a selector builds a fresh object/array each call but its contents did not change.',
+        'shallow(a, b) is an equality function that compares two values one level deep (keys/values for objects, element-by-element for iterables, entries for Map/Set). useShallow(selector) wraps a selector so it returns the previous reference when the new slice is shallow-equal — giving a selector that builds a fresh object/array each call a stable result when its contents did not change. That matters because in v5 an unstable selector result is not merely an extra re-render: with `create` it is an infinite update loop ("Maximum update depth exceeded").',
       relationships: [
         { to: 'selector', cardinality: 'one-to-one', label: 'wraps a selector to compare its output shallowly' },
       ],
@@ -191,10 +191,10 @@ const bundle = {
       id: 'middleware',
       name: 'Middleware',
       definition:
-        'A higher-order state-creator: a function that takes a state creator and returns a new one, intercepting `set`, `get`, or `api` to add behavior. persist, devtools, immer, redux, combine, and subscribeWithSelector are all middleware. They nest, so create(devtools(persist(creator, opts))) composes their effects.',
+        'A higher-order state-creator: a function that takes a state creator and returns a new one, wrapping `set` and/or patching methods on the `api` to add behavior (`get` is handed through too, but no shipped middleware wraps it). persist, devtools, immer, redux, combine, and subscribeWithSelector are all middleware. They nest, so create(devtools(persist(creator, opts))) composes their effects.',
       relationships: [
         { to: 'state-creator', cardinality: 'one-to-one', label: 'wraps a state creator and returns a new one' },
-        { to: 'set-fn', cardinality: 'many-to-one', label: 'intercepts set/get/api to add behavior' },
+        { to: 'set-fn', cardinality: 'many-to-one', label: 'wraps set and/or patches the api to add behavior' },
       ],
     },
     {
@@ -211,7 +211,7 @@ const bundle = {
       id: 'devtools',
       name: 'devtools middleware',
       definition:
-        'Middleware that connects the store to the Redux DevTools browser extension. It wraps set with an optional action name so each change appears as a labelled, time-travellable entry. It does not change state behavior — purely an inspection layer.',
+        'Middleware that connects the store to the Redux DevTools browser extension. It replaces api.setState with a version that takes an optional action name and reports each change to the extension as a labelled entry, and it listens to the extension so time-travel commands (RESET, ROLLBACK, JUMP_TO_STATE / JUMP_TO_ACTION, IMPORT_STATE) write state back into the store. Data flows both ways — it is not an inspection-only layer — though an app-initiated set still returns the same result.',
       relationships: [
         { to: 'middleware', cardinality: 'many-to-one', label: 'is a middleware' },
       ],
@@ -227,7 +227,7 @@ const bundle = {
       entitiesTouched: ['create', 'store', 'state-creator', 'state'],
       stateChange: 'Runs the state creator with (set, get, api); the returned object becomes the initial state; an empty listener Set is allocated.',
       failureModes: [
-        'Forgetting the extra () in create<State>()(...) — TypeScript needs the curried call to infer the state type.',
+        'Writing create<State>(middleware(...)) with only the state type and no curried () — the middleware mutator list then defaults to [] and the types stop lining up. The curried create<State>()(...) lets you annotate State while TypeScript infers the mutators; without middleware, plain create<State>(...) types fine.',
       ],
     },
     {
@@ -249,7 +249,7 @@ const bundle = {
       entitiesTouched: ['create', 'selector', 'state', 'listener'],
       stateChange: 'useSyncExternalStore subscribes the component; after each set, the selector re-runs and the component re-renders only if its slice changed by Object.is (or by useShallow / a custom equality fn).',
       failureModes: [
-        'Returning a fresh object/array from a selector every call → Object.is always false → re-renders on every store change. Fix with useShallow.',
+        'Returning a fresh object/array from a selector every call → Object.is always false → with create in v5, an infinite update loop that throws "Maximum update depth exceeded" (the one-extra-re-render behaviour is v4 / createWithEqualityFn). Fix with useShallow or another stable reference.',
       ],
     },
     {
@@ -343,16 +343,16 @@ const bundle = {
           id: 'sim-noop',
           title: 'An action calls set with the same value',
           narrative:
-            'Now an action runs set((s) => ({ bears: s.bears })) — it returns bears unchanged. What happens?',
+            'Now an action runs set((s) => s) — it hands back the current state object itself, bears unchanged. What happens?',
           decision: {
             prompt: 'Do any listeners fire?',
             options: [
               {
                 id: 'noop-correct',
-                label: 'No listeners fire — the merged result is a new object, but if the action returned the exact same state reference, Object.is short-circuits.',
+                label: 'No listeners fire — the updater returned the exact same state reference, so Object.is(next, current) short-circuits before any merge.',
                 correct: true,
                 outcome:
-                  'Careful nuance: set checks Object.is on the value the updater returns BEFORE merging. Returning a brand-new object { bears } is a new reference, so it WOULD notify. To truly no-op you must return the same state reference (e.g. return state).',
+                  'Right. set checks Object.is on the value the updater returns BEFORE merging, so the same reference skips merge and notify entirely. Careful nuance: had the action returned a brand-new object such as { bears: s.bears }, that is a new reference — set would merge it into a new state object and notify every listener even though bears did not change (tests/vanilla/subscribe.test.tsx asserts exactly this with setState({ ...getState() })).',
                 effects: [{ note: 'Teaches the exact bail-out point: Object.is(next, current) on the updater’s return value' }],
               },
               {
@@ -377,21 +377,26 @@ const bundle = {
       { id: 'vanilla-core', name: 'Vanilla core', kind: 'service', tech: 'src/vanilla.ts', note: 'createStore: state + listener Set + set/get/subscribe. No React.' },
       { id: 'react-bindings', name: 'React bindings', kind: 'frontend', tech: 'src/react.ts', note: 'create() + useStore() over React.useSyncExternalStore' },
       { id: 'traditional', name: 'Equality-fn bindings', kind: 'frontend', tech: 'src/traditional.ts', note: 'createWithEqualityFn / useStoreWithEqualityFn via use-sync-external-store/with-selector' },
-      { id: 'shallow-mod', name: 'shallow + useShallow', kind: 'service', tech: 'src/vanilla/shallow.ts, src/react/shallow.ts', note: 'One-level equality + selector re-render guard' },
-      { id: 'middleware-mod', name: 'Middleware bundle', kind: 'service', tech: 'src/middleware/*', note: 'persist, devtools, immer, redux, combine, subscribeWithSelector' },
+      { id: 'shallow-mod', name: 'shallow + useShallow', kind: 'service', tech: 'src/vanilla/shallow.ts, src/react/shallow.ts', note: 'One-level equality + selector re-render guard; standalone — imports nothing from the vanilla core' },
+      { id: 'middleware-mod', name: 'Middleware bundle', kind: 'service', tech: 'src/middleware/*', note: 'persist, devtools, immer, redux, combine, subscribeWithSelector, unstable_ssrSafe' },
       { id: 'react-ext', name: 'React', kind: 'external', tech: 'react >=18', note: 'Schedules re-renders; provides useSyncExternalStore' },
       { id: 'storage-ext', name: 'Storage', kind: 'datastore', tech: 'localStorage / custom', note: 'persist read/write target' },
       { id: 'devtools-ext-c', name: 'Redux DevTools', kind: 'external', tech: 'browser extension', note: 'devtools action log / time travel' },
+      { id: 'immer-ext', name: 'Immer', kind: 'external', tech: 'immer >=9.0.6 (optional peer)', note: 'produce(); imported only by src/middleware/immer.ts' },
+      { id: 'uses-shim-ext', name: 'use-sync-external-store', kind: 'external', tech: 'use-sync-external-store >=1.2.0 (optional peer)', note: 'shim/with-selector; imported only by src/traditional.ts' },
     ],
     connections: [
       { from: 'react-bindings', to: 'vanilla-core', label: 'wraps createStore' },
       { from: 'traditional', to: 'vanilla-core', label: 'wraps createStore' },
       { from: 'react-bindings', to: 'react-ext', label: 'useSyncExternalStore' },
-      { from: 'traditional', to: 'shallow-mod', label: 'default equality fn = shallow' },
+      { from: 'traditional', to: 'shallow-mod', label: 'equalityFn slot (e.g. shallow; default Object.is)' },
       { from: 'react-bindings', to: 'shallow-mod', label: 'useShallow guards selectors' },
-      { from: 'middleware-mod', to: 'vanilla-core', label: 'wraps set/get/api' },
+      { from: 'middleware-mod', to: 'vanilla-core', label: 'wraps set + patches api (types from vanilla)' },
       { from: 'middleware-mod', to: 'storage-ext', label: 'persist read/write' },
-      { from: 'middleware-mod', to: 'devtools-ext-c', label: 'devtools connect' },
+      { from: 'middleware-mod', to: 'devtools-ext-c', label: 'devtools connect (two-way: time-travel writes back)' },
+      { from: 'middleware-mod', to: 'immer-ext', label: 'immer middleware calls produce' },
+      { from: 'traditional', to: 'uses-shim-ext', label: 'useSyncExternalStoreWithSelector' },
+      { from: 'shallow-mod', to: 'react-ext', label: 'useShallow uses React.useRef' },
     ],
   },
 
@@ -416,8 +421,8 @@ const bundle = {
           blocks: [
             {
               type: 'prose',
-              heading: 'The whole store is ~30 lines',
-              md: 'A zustand store is a function-local `state` variable plus a `Set` of listeners. It exposes four methods — `setState`, `getState`, `getInitialState`, `subscribe` — and nothing else. There is no proxy, no dependency tracking, no Provider. Everything else (React bindings, middleware) is built on top of this.',
+              heading: 'The whole store fits on one screen',
+              md: 'A zustand store is a function-local `state` variable, the `initialState` it started from, plus a `Set` of listeners. It exposes four methods — `setState`, `getState`, `getInitialState`, `subscribe` — and nothing else. There is no proxy, no dependency tracking, no Provider. Everything else (React bindings, middleware) is built on top of this.',
             },
             {
               type: 'mental-model',
@@ -430,14 +435,24 @@ const bundle = {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/vanilla.ts',
+              excerpt: 'verbatim',
               caption: 'The state creator runs once; its return value is the initial state (src/vanilla.ts).',
-              highlightLines: [4, 5],
-              code: `let state: TState
-const listeners: Set<Listener> = new Set()
-// ...
-const api = { setState, getState, getInitialState, subscribe }
-const initialState = (state = createState(setState, getState, api))
-return api as any`,
+              highlightLines: [12, 13],
+              code: `  const getState: StoreApi<TState>['getState'] = () => state
+
+  const getInitialState: StoreApi<TState>['getInitialState'] = () =>
+    initialState
+
+  const subscribe: StoreApi<TState>['subscribe'] = (listener) => {
+    listeners.add(listener)
+    // Unsubscribe
+    return () => listeners.delete(listener)
+  }
+
+  const api = { setState, getState, getInitialState, subscribe }
+  const initialState = (state = createState(setState, getState, api))
+  return api as any
+}`,
             },
             {
               type: 'callout',
@@ -452,35 +467,38 @@ return api as any`,
           blocks: [
             {
               type: 'prose',
-              md: 'Every update goes through `set`. Read its body carefully — three behaviors are baked in here and they explain almost every "why didn’t my component update?" question.',
+              md: 'Every update goes through `set`. Read its body carefully — four steps are baked in here and they explain almost every "why didn’t my component update?" question.',
             },
             {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/vanilla.ts',
+              excerpt: 'verbatim',
               caption: 'setState: compute → Object.is bail-out → shallow-merge (unless replace) → notify (src/vanilla.ts).',
-              highlightLines: [5, 9, 11],
-              code: `const setState = (partial, replace) => {
-  const nextState =
-    typeof partial === 'function'
-      ? partial(state)
-      : partial
-  if (!Object.is(nextState, state)) {
-    const previousState = state
-    state =
-      (replace ?? (typeof nextState !== 'object' || nextState === null))
-        ? nextState
-        : Object.assign({}, state, nextState)
-    listeners.forEach((listener) => listener(state, previousState))
-  }
-}`,
+              highlightLines: [4, 8, 13, 14],
+              code: `  const setState: StoreApi<TState>['setState'] = (partial, replace) => {
+    // TODO: Remove type assertion once https://github.com/microsoft/TypeScript/issues/37663 is resolved
+    // https://github.com/microsoft/TypeScript/issues/37663#issuecomment-759728342
+    const nextState =
+      typeof partial === 'function'
+        ? (partial as (state: TState) => TState)(state)
+        : partial
+    if (!Object.is(nextState, state)) {
+      const previousState = state
+      state =
+        (replace ?? (typeof nextState !== 'object' || nextState === null))
+          ? (nextState as TState)
+          : Object.assign({}, state, nextState)
+      listeners.forEach((listener) => listener(state, previousState))
+    }
+  }`,
             },
             {
               type: 'mental-model',
-              heading: 'The three behaviors of set',
+              heading: 'The four steps of set',
               entities: ['set-fn', 'state', 'listener'],
               verbs: ['update-state'],
-              md: '1) **Bail-out**: if `Object.is(next, current)` it does nothing — no merge, no notify. 2) **Shallow merge**: otherwise it does `Object.assign({}, state, next)` — one level deep only. 3) **Notify**: it then calls every listener with `(state, prevState)`.',
+              md: '1) **Compute**: if you passed a function, `set` calls it with the current state to get `next`. 2) **Bail-out**: if `Object.is(next, current)` it does nothing — no merge, no notify. 3) **Merge or replace**: by default it shallow-merges with `Object.assign({}, state, next)` — one level deep only. If you pass `replace: true`, or you omit `replace` and `next` is a primitive or `null`, it assigns `next` directly with no merge (an explicit `replace: false` always merges). 4) **Notify**: it then calls every listener with `(state, prevState)`.',
             },
             {
               type: 'predict-reveal',
@@ -503,12 +521,13 @@ return api as any`,
           blocks: [
             {
               type: 'prose',
-              md: 'Because `set` bails on `Object.is`, the reliable way to trigger an update is to return a **new** object. Mutating the existing state in place changes nothing React (or any listener) can detect.',
+              md: 'Because `set` bails on `Object.is`, the reliable way to trigger an update is to return a **new** object. Mutating the existing state in place never notifies a listener (`set` sees the same reference and returns early); the README states the rule plainly: state has to be updated immutably.',
             },
             {
               type: 'code',
               language: 'jsx',
               sourcePath: 'docs/learn/guides/immutable-state-and-merging.md',
+              excerpt: 'verbatim',
               caption: 'The idiomatic update — return a new partial; `set` merges it (docs/learn/guides/immutable-state-and-merging.md).',
               code: `const useCountStore = create((set) => ({
   count: 0,
@@ -647,12 +666,16 @@ return api as any`,
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/react.ts',
+              excerpt: 'verbatim',
               caption: 'create wraps createStore, returns a hook, and Object.assigns the store API onto it (src/react.ts).',
               highlightLines: [2, 4, 6],
-              code: `const createImpl = (createState) => {
+              code: `const createImpl = <T>(createState: StateCreator<T, [], []>) => {
   const api = createStore(createState)
-  const useBoundStore = (selector) => useStore(api, selector)
+
+  const useBoundStore: any = (selector?: any) => useStore(api, selector)
+
   Object.assign(useBoundStore, api)
+
   return useBoundStore
 }`,
             },
@@ -660,15 +683,16 @@ return api as any`,
               type: 'code',
               language: 'jsx',
               sourcePath: 'docs/learn/getting-started/introduction.md',
+              excerpt: 'verbatim',
               caption: 'The "your store is a hook" usage — no Provider anywhere (docs/learn/getting-started/introduction.md).',
-              code: `const useBear = create((set) => ({
-  bears: 0,
-  increasePopulation: () => set((state) => ({ bears: state.bears + 1 })),
-}))
-
-function BearCounter() {
+              code: `function BearCounter() {
   const bears = useBear((state) => state.bears)
   return <h1>{bears} bears around here...</h1>
+}
+
+function Controls() {
+  const increasePopulation = useBear((state) => state.increasePopulation)
+  return <button onClick={increasePopulation}>one up</button>
 }`,
             },
             {
@@ -690,14 +714,21 @@ function BearCounter() {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/react.ts',
+              excerpt: 'verbatim',
               caption: 'useStore = useSyncExternalStore(subscribe, selectorOverGetState, selectorOverInitial) (src/react.ts).',
-              highlightLines: [2, 3, 4],
-              code: `const slice = React.useSyncExternalStore(
-  api.subscribe,
-  React.useCallback(() => selector(api.getState()), [api, selector]),
-  React.useCallback(() => selector(api.getInitialState()), [api, selector]),
-)
-return slice`,
+              highlightLines: [6, 7, 8],
+              code: `export function useStore<TState, StateSlice>(
+  api: ReadonlyStoreApi<TState>,
+  selector: (state: TState) => StateSlice = identity as any,
+) {
+  const slice = React.useSyncExternalStore(
+    api.subscribe,
+    React.useCallback(() => selector(api.getState()), [api, selector]),
+    React.useCallback(() => selector(api.getInitialState()), [api, selector]),
+  )
+  React.useDebugValue(slice)
+  return slice
+}`,
             },
             {
               type: 'mental-model',
@@ -709,7 +740,7 @@ return slice`,
             {
               type: 'callout',
               variant: 'warning',
-              md: 'Using `useSyncExternalStore` is exactly how zustand sidesteps the "zombie child", "React concurrency", and "context loss" problems the introduction doc calls out — it is the official React API for subscribing to an external store.',
+              md: 'The introduction doc says zustand deals with the "zombie child", "React concurrency", and "context loss" pitfalls. Be precise about how. Context loss between mixed renderers is avoided structurally — `src/react.ts` never uses React context; the hook simply closes over its store. Zombie-child safety was hand-rolled until April 2022 (#550): zustand subscribed with useReducer + refs and re-checked state after subscribing. That code was deleted when zustand adopted `useSyncExternalStore` — React’s public API for subscribing to an external store — which now performs the subscription and the post-subscribe re-check itself; the old zombie-child regression test still passes through it. The concurrency guarantee is React’s: the repo’s docs describe the result ("safe under React concurrency") rather than implementing it.',
             },
           ],
         },
@@ -725,13 +756,18 @@ return slice`,
               type: 'code',
               language: 'jsx',
               sourcePath: 'README.md',
+              excerpt: 'verbatim',
               caption: 'Non-reactive use of the store outside React (README.md).',
               code: `const useDogStore = create(() => ({ paw: true, snout: true, fur: true }))
 
-const paw = useDogStore.getState().paw          // fresh, non-reactive
-const unsub = useDogStore.subscribe(console.log) // fires on every change
-useDogStore.setState({ paw: false })             // triggers listeners
-unsub()`,
+// Getting non-reactive fresh state
+const paw = useDogStore.getState().paw
+// Listening to all changes, fires synchronously on every change
+const unsub1 = useDogStore.subscribe(console.log)
+// Updating state, will trigger listeners
+useDogStore.setState({ paw: false })
+// Unsubscribe listeners
+unsub1()`,
             },
             {
               type: 'exercise',
@@ -801,7 +837,7 @@ unsub()`,
             {
               type: 'prose',
               heading: 'Render optimization is manual and that is the point',
-              md: 'zustand does not track which fields you read (unlike Valtio/MobX). Instead, YOU pick a slice with a selector, and zustand re-renders only when that slice changes by `Object.is` (strict reference equality). Narrow selectors = fewer re-renders.',
+              md: 'zustand does not track which fields you read (the comparison doc contrasts this with Valtio, which optimizes renders through property access). Instead, YOU pick a slice with a selector, and zustand re-renders only when that slice changes by `Object.is` (strict reference equality). Narrow selectors = fewer re-renders.',
             },
             {
               type: 'diagram',
@@ -811,9 +847,9 @@ unsub()`,
               type: 'code',
               language: 'jsx',
               sourcePath: 'README.md',
+              excerpt: 'verbatim',
               caption: 'Atomic picks compare with strict equality — efficient by default (README.md).',
-              code: `// It detects changes with strict-equality (old === new) by default
-const nuts = useBearStore((state) => state.nuts)
+              code: `const nuts = useBearStore((state) => state.nuts)
 const honey = useBearStore((state) => state.honey)`,
             },
           ],
@@ -824,13 +860,14 @@ const honey = useBearStore((state) => state.honey)`,
           blocks: [
             {
               type: 'prose',
-              md: 'The single most common zustand performance bug: a selector that builds a NEW object or array every call. Because `Object.is` compares references, the new object is never equal to the last one, so the component re-renders on EVERY store change — even unrelated ones.',
+              md: 'The classic zustand selector bug: a selector that builds a NEW object or array every call. Because `Object.is` compares references, the new object is never equal to the last one. With `create` in v5 the consequence is worse than wasted renders: the default `Object.is` comparison fails on every check and, in the words of the useShallow docs, the component "re-subscribes in a loop" that ends in "Maximum update depth exceeded" — the v5 migration guide warns that such selectors "may cause infinite loops", and the useShallow docs call bundling several values into one object "the most common case" of that error. (Before v5, `create` memoized the selection per store snapshot, so the same selector only cost unnecessary re-renders; the v5 migration guide points at `createWithEqualityFn` from `zustand/traditional` "if you need v4 behavior".)',
             },
             {
               type: 'code',
               language: 'js',
               sourcePath: 'docs/learn/guides/prevent-rerenders-with-use-shallow.md',
-              caption: 'This re-renders on every change — `Object.keys(state)` is a fresh array each time (docs/learn/guides/prevent-rerenders-with-use-shallow.md).',
+              excerpt: 'verbatim',
+              caption: '`Object.keys(state)` is a fresh array each time — the guide describes unnecessary re-renders; with `create` in v5 the unstable snapshot means an infinite update loop (docs/learn/guides/prevent-rerenders-with-use-shallow.md).',
               code: `const useMeals = create(() => ({
   papaBear: 'large porridge-pot',
   mamaBear: 'middle-size porridge pot',
@@ -839,26 +876,36 @@ const honey = useBearStore((state) => state.honey)`,
 
 export const BearNames = () => {
   const names = useMeals((state) => Object.keys(state))
+
   return <div>{names.join(', ')}</div>
 }`,
             },
             {
               type: 'predict-reveal',
-              prompt: 'In the code above, another bear’s meal changes (e.g. `papaBear` becomes "a large pizza"), but the SET of keys is identical. Does `BearNames` re-render?',
+              prompt: 'In the code above, nothing in the store changes at all — no bear orders a new meal. With `create` in v5, does `BearNames` render once and settle?',
               reveal:
-                'Yes — and that is the bug. The selector returns a brand-new array each call, so `Object.is(prevArray, newArray)` is false and the component re-renders even though the key set did not change. The docs call this out explicitly.',
-              hint: 'What does Object.keys() return each time — the same array, or a new one?',
+                'No — it never settles. The selector returns a brand-new array each call, so the `Object.is` comparison fails every time and the update loops until it throws "Maximum update depth exceeded" (docs/reference/migrations/migrating-to-v5.md, docs/reference/hooks/use-shallow.md Troubleshooting). No store change is needed — the unstable selection alone triggers it. (The guide phrases the symptom as unnecessary re-renders; the v5 migration guide is the precise statement.)',
+              hint: 'What does Object.keys() return each time — the same array, or a new one? And what does React do when getSnapshot keeps returning something new?',
             },
             {
               type: 'code',
               language: 'js',
               sourcePath: 'docs/learn/guides/prevent-rerenders-with-use-shallow.md',
+              excerpt: 'verbatim',
               caption: 'The fix: wrap the selector in useShallow (docs/learn/guides/prevent-rerenders-with-use-shallow.md).',
-              highlightLines: [2, 7],
-              code: `import { useShallow } from 'zustand/react/shallow'
+              highlightLines: [2, 11],
+              code: `import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
+
+const useMeals = create(() => ({
+  papaBear: 'large porridge-pot',
+  mamaBear: 'middle-size porridge pot',
+  littleBear: 'A little, small, wee pot',
+}))
 
 export const BearNames = () => {
   const names = useMeals(useShallow((state) => Object.keys(state)))
+
   return <div>{names.join(', ')}</div>
 }`,
             },
@@ -876,14 +923,15 @@ export const BearNames = () => {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/react/shallow.ts',
+              excerpt: 'verbatim',
               caption: 'useShallow returns the previous reference when shallow-equal (src/react/shallow.ts).',
               highlightLines: [4, 5, 6],
-              code: `export function useShallow(selector) {
-  const prev = React.useRef(undefined)
+              code: `export function useShallow<S, U>(selector: (state: S) => U): (state: S) => U {
+  const prev = React.useRef<U>(undefined)
   return (state) => {
     const next = selector(state)
     return shallow(prev.current, next)
-      ? prev.current
+      ? (prev.current as U)
       : (prev.current = next)
   }
 }`,
@@ -906,34 +954,34 @@ export const BearNames = () => {
         {
           id: 'sr-q-trap',
           type: 'mcq',
-          prompt: 'A selector returns `{ a: state.a, b: state.b }`. Even when neither a nor b changes, the component re-renders on every store update. Why, and what is the fix?',
+          prompt: 'A component reads `useStore((state) => ({ a: state.a, b: state.b }))` from a v5 `create` store. As soon as it mounts, React throws "Maximum update depth exceeded" even though neither a nor b changes. Why, and what is the fix?',
           options: [
             {
               id: 'a',
-              text: 'The selector builds a new object each call, so Object.is is always false; wrap it in useShallow.',
+              text: 'The selector builds a new object each call, so Object.is is always false and the update loops until it throws; wrap it in useShallow.',
               correct: true,
             },
             {
               id: 'b',
-              text: 'zustand re-renders all subscribers on every set; there is no fix.',
+              text: 'zustand re-renders all subscribers on every set; the loop is inherent and there is no fix.',
               correct: false,
               ifChosen:
-                'No — zustand re-renders a component only when ITS selected slice changes. The problem is specific: your selector returns a fresh object literal each call, so the default Object.is reference check always fails. `useShallow((s) => ({ a: s.a, b: s.b }))` compares one level deep and returns the previous reference when a and b are unchanged.',
+                'No — zustand re-renders a component only when ITS selected slice changes. The problem is specific: your selector returns a fresh object literal each call, so the Object.is comparison always fails and the update loops until it throws. `useShallow((s) => ({ a: s.a, b: s.b }))` compares one level deep and returns the previous reference when a and b are unchanged, so the selection is stable.',
             },
             {
               id: 'c',
-              text: 'You must call set with replace:true to stop the re-renders.',
+              text: 'You must call set with replace:true to stop the loop.',
               correct: false,
               ifChosen:
-                'replace is about how state is merged on write, not about how selectors compare on read. The re-render is driven by the selector returning a new reference; the fix is useShallow (or a custom equality fn).',
+                'replace is about how state is merged on write, not about how selectors compare on read. The loop is driven by the selector returning a new reference on every call; the fix is useShallow (or a custom equality fn via createWithEqualityFn).',
             },
           ],
           explanation:
-            'Default selection compares the slice by Object.is. A selector returning a new object/array each call never matches its previous result, forcing re-renders. useShallow does a one-level comparison and reuses the prior reference when equal.',
+            'Default selection compares the slice by Object.is. A selector returning a new object/array each call never matches its previous result; with create in v5 that is an infinite update loop ending in "Maximum update depth exceeded" — the useShallow docs call bundling values into one object the most common case. useShallow does a one-level comparison and reuses the prior reference when equal, so the selection stabilizes.',
           misconception: {
             id: 'mc-fresh-object-selector',
-            trap: 'Re-renders on every change mean zustand ignores selectors',
-            correction: 'Selectors ARE respected via Object.is; a fresh object/array from the selector defeats it — fix with useShallow.',
+            trap: 'A fresh-object selector just costs a few unnecessary re-renders (or means zustand ignores selectors)',
+            correction: 'Selectors ARE respected via Object.is; a fresh object/array never matches, and with create in v5 that is an infinite update loop ("Maximum update depth exceeded") — return a stable reference, e.g. with useShallow.',
             relatedEntities: ['selector', 'shallow-fn'],
           },
           difficulty: 'core',
@@ -976,7 +1024,7 @@ export const BearNames = () => {
       order: 4,
       prerequisites: ['selectors-rerenders'],
       objective:
-        'Learn the one shape every middleware shares (wrap the state creator, intercept set/get/api), tour persist/devtools/immer/redux, then map every concept to the real files and the architecture so you can navigate and extend the code.',
+        'Learn the one shape every middleware shares (wrap the state creator; wrap set and/or patch the api), tour persist/devtools/immer/redux, then map every concept to the real files and the architecture so you can navigate and extend the code.',
       oneJob: 'Turn the concept model into the ability to read and change the real zustand source.',
       estMinutes: 20,
       capstone: true,
@@ -994,37 +1042,52 @@ export const BearNames = () => {
             {
               type: 'prose',
               heading: 'A higher-order state creator',
-              md: 'A middleware takes your state creator and returns a new one. Inside, it gets `(set, get, api)` and wraps one or more of them. `combine` is the gentlest example — it just merges an initial state object in front of your creator and infers the types for you.',
+              md: 'A middleware takes your state creator and returns a new one. Inside, it gets `(set, get, api)` and typically wraps `set` and/or patches methods on `api`. `combine` is the gentlest example — it wraps none of them; it just merges an initial state object in front of your creator’s result and infers the types for you.',
             },
             {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/middleware/combine.ts',
+              excerpt: 'verbatim',
               caption: 'combine: the minimal middleware — prepend initial state, run the creator (src/middleware/combine.ts).',
-              code: `export function combine(initialState, create) {
-  return (...args) => Object.assign({}, initialState, create(...args))
+              code: `export function combine<
+  T extends object,
+  U extends object,
+  Mps extends [StoreMutatorIdentifier, unknown][] = [],
+  Mcs extends [StoreMutatorIdentifier, unknown][] = [],
+>(
+  initialState: T,
+  create: StateCreator<T, Mps, Mcs, U>,
+): StateCreator<Write<T, U>, Mps, Mcs> {
+  return (...args) => Object.assign({}, initialState, (create as any)(...args))
 }`,
             },
             {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/middleware/immer.ts',
-              caption: 'immer: wrap set so a "mutate the draft" updater becomes an immutable next state via produce (src/middleware/immer.ts).',
-              highlightLines: [2, 3, 4],
-              code: `const immerImpl = (initializer) => (set, get, store) => {
+              excerpt: 'verbatim',
+              caption: 'immer: patch store.setState — and hand that same function to the creator as set — so a "mutate the draft" updater becomes an immutable next state via produce (src/middleware/immer.ts).',
+              highlightLines: [4, 5, 6],
+              code: `const immerImpl: ImmerImpl = (initializer) => (set, get, store) => {
+  type T = ReturnType<typeof initializer>
+
   store.setState = (updater, replace, ...args) => {
-    const nextState =
-      typeof updater === 'function' ? produce(updater) : updater
-    return set(nextState, replace, ...args)
+    const nextState = (
+      typeof updater === 'function' ? produce(updater as any) : updater
+    ) as ((s: T) => T) | T | Partial<T>
+
+    return set(nextState, replace as any, ...args)
   }
+
   return initializer(store.setState, get, store)
 }`,
             },
             {
               type: 'mental-model',
-              heading: 'Wrap set, wrap get, or wrap api',
+              heading: 'Where each middleware intercepts',
               entities: ['middleware', 'set-fn', 'store'],
-              md: 'persist & immer wrap **set** (immer transforms the updater; persist writes to storage after). subscribeWithSelector & persist also overwrite **api** methods (subscribe / setState). redux attaches a **dispatch** to the api. Same skeleton, different interception point.',
+              md: 'On their normal paths, the shipped middleware that wrap **set** also patch **api.setState**, so the raw api and the creator’s `set` agree: immer assigns `store.setState` (running function updaters through produce), persist reassigns `api.setState` (writing to storage after each change), devtools reassigns it (reporting each change to the extension), and ssrSafe swaps in a throwing setter on the server. One known exception: when persist finds no storage it wraps `set` with a warning and leaves `api.setState` alone (src/middleware/persist.ts:208-219). Beyond setState, subscribeWithSelector overwrites **api.subscribe**, persist adds **api.persist**, devtools adds **api.devtools**, and redux attaches a **dispatch** to the api. `get` reaches every middleware too, but none of the built-ins wrap it. Same skeleton, different interception point.',
             },
           ],
         },
@@ -1040,25 +1103,27 @@ export const BearNames = () => {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/middleware/persist.ts',
+              excerpt: 'verbatim',
               caption: 'The default options: localStorage + identity partialize + SHALLOW merge (src/middleware/persist.ts).',
               highlightLines: [2, 4, 5, 6, 7],
-              code: `let options = {
-  storage: createJSONStorage(() => window.localStorage),
-  partialize: (state) => state,
-  version: 0,
-  merge: (persistedState, currentState) => ({
-    ...currentState,
-    ...persistedState,
-  }),
-  ...baseOptions,
-}`,
+              code: `  let options = {
+    storage: createJSONStorage<S, void>(() => window.localStorage),
+    partialize: (state: S) => state,
+    version: 0,
+    merge: (persistedState: unknown, currentState: S) => ({
+      ...currentState,
+      ...(persistedState as object),
+    }),
+    ...baseOptions,
+  }`,
             },
             {
               type: 'code',
               language: 'ts',
               sourcePath: 'docs/reference/middlewares/persist.md',
+              excerpt: 'verbatim',
               caption: 'Wrapping a store in persist — only `name` is required (docs/reference/middlewares/persist.md).',
-              code: `const positionStore = createStore()(
+              code: `const positionStore = createStore<PositionStore>()(
   persist(
     (set) => ({
       position: { x: 0, y: 0 },
@@ -1082,31 +1147,37 @@ export const BearNames = () => {
           blocks: [
             {
               type: 'prose',
-              md: 'If you miss reducers, the `redux` middleware wires a reducer + initial state and attaches a `dispatch` to both the state and the api. `devtools` connects the store to the Redux DevTools extension, labelling each change as an action — purely an inspection layer, it does not change state behavior.',
+              md: 'If you miss reducers, the `redux` middleware wires a reducer + initial state and attaches a `dispatch` to both the state and the api. `devtools` connects the store to the Redux DevTools extension and labels each change as an action — but it is not inspection-only: it replaces `api.setState` with a three-argument version that also reports to the extension, and it subscribes to the extension so RESET, ROLLBACK, JUMP_TO_STATE / JUMP_TO_ACTION and IMPORT_STATE write state back into the store through `setStateFromDevtools`. That write-back is what makes time-travel debugging work.',
             },
             {
               type: 'code',
               language: 'typescript',
               sourcePath: 'src/middleware/redux.ts',
+              excerpt: 'verbatim',
               caption: 'redux: attach dispatch(action) that runs your reducer through set (src/middleware/redux.ts).',
-              highlightLines: [2, 3],
-              code: `const reduxImpl = (reducer, initial) => (set, _get, api) => {
-  api.dispatch = (action) => {
-    set((state) => reducer(state, action), false, action)
+              highlightLines: [4, 5],
+              code: `const reduxImpl: ReduxImpl = (reducer, initial) => (set, _get, api) => {
+  type S = typeof initial
+  type A = Parameters<typeof reducer>[1]
+  ;(api as any).dispatch = (action: A) => {
+    ;(set as NamedSet<S>)((state: S) => reducer(state, action), false, action)
     return action
   }
-  return { dispatch: (...a) => api.dispatch(...a), ...initial }
+  ;(api as any).dispatchFromDevtools = true
+
+  return { dispatch: (...args) => (api as any).dispatch(...args), ...initial }
 }`,
             },
             {
               type: 'callout',
               variant: 'warning',
-              md: 'From the README: "middlewares that modify `set` or `get` are not applied to `getState` and `setState`." So the bare `store.getState()` / `store.setState()` may bypass middleware-added behavior (e.g. immer’s draft handling). Reach for the wrapped `set` inside actions, not the raw api, when middleware semantics matter.',
+              md: 'The README warns: "middlewares that modify `set` or `get` are not applied to `getState` and `setState`." Take it as a rule for middleware authors: if you wrap only the `set` argument you pass to the creator and never reassign `api.setState`, the raw api will bypass your wrapper. The shipped middleware do patch `api.setState` (immer.ts, persist.ts, devtools.ts, ssrSafe.ts), so the bare `store.setState((s) => { s.count = 10 })` DOES go through immer’s draft handling — the repo’s own test asserts it (tests/immer.test.tsx). The docs’ logger example also patches `api.setState` alongside the wrapped `set` (docs/learn/guides/advanced-typescript.md).',
             },
             {
               type: 'code',
               language: 'ts',
               sourcePath: 'README.md',
+              excerpt: 'verbatim',
               caption: 'Composing middleware — devtools(persist(...)) — and the curried create<State>() typing (README.md).',
               highlightLines: [1],
               code: `const useBearStore = create<BearState>()(
@@ -1116,7 +1187,9 @@ export const BearNames = () => {
         bears: 0,
         increase: (by) => set((state) => ({ bears: state.bears + by })),
       }),
-      { name: 'bear-storage' },
+      {
+        name: 'bear-storage',
+      },
     ),
   ),
 )`,
@@ -1124,7 +1197,7 @@ export const BearNames = () => {
             {
               type: 'callout',
               variant: 'gotcha',
-              md: 'TypeScript gotcha (README "TypeScript Usage"): write `create<State>()(...)` — note the extra empty `()`. The curried call is what lets zustand infer the state type through the middleware stack. `create<State>(...)` (no second call) will not type correctly.',
+              md: 'TypeScript gotcha (README "TypeScript Usage"): write `create<State>()(...)` — note the extra empty `()`. The first call is where YOU annotate the state type (the docs explain it cannot be inferred because the state generic is invariant); the second call lets TypeScript infer everything else — chiefly the middleware mutator list — because generic inference is all-or-nothing (docs/learn/guides/advanced-typescript.md, "Why the currying"). Without middleware, plain `create<State>((set) => ...)` types fine and the repo’s own tests use it. What fails is `create<State>(devtools(persist(...)))` with only `State` given: the mutator list defaults to `[]` and the middleware types no longer line up.',
             },
           ],
         },
@@ -1134,7 +1207,7 @@ export const BearNames = () => {
           blocks: [
             {
               type: 'prose',
-              md: 'The mental model maps cleanly onto the source. The vanilla core is the foundation; React, traditional (equality-fn), shallow, and the middleware all build on it.',
+              md: 'The mental model maps cleanly onto the source. The vanilla core is the foundation; React, traditional (equality-fn) and the middleware all build on it. shallow/useShallow are the exception — a standalone equality helper (src/vanilla/shallow.ts imports nothing; src/react/shallow.ts imports only React and shallow) that you plug into selection alongside the core.',
             },
             {
               type: 'code-map',
@@ -1148,7 +1221,7 @@ export const BearNames = () => {
                 { label: 'Custom equality fn (createWithEqualityFn)', files: [{ path: 'src/traditional.ts', role: 'useStoreWithEqualityFn + createWithEqualityFn' }, { path: 'src/shallow.ts', role: 're-exports shallow + useShallow' }] },
                 { label: 'Middleware barrel', entity: 'middleware', files: [{ path: 'src/middleware.ts', role: 're-exports all middleware' }] },
                 { label: 'persist', entity: 'persist', files: [{ path: 'src/middleware/persist.ts', role: 'storage write + rehydrate/merge/migrate' }] },
-                { label: 'devtools', entity: 'devtools', files: [{ path: 'src/middleware/devtools.ts', role: 'Redux DevTools connect' }] },
+                { label: 'devtools', entity: 'devtools', files: [{ path: 'src/middleware/devtools.ts', role: 'Redux DevTools connect + time-travel write-back' }] },
                 { label: 'immer / redux / combine / subscribeWithSelector', files: [{ path: 'src/middleware/immer.ts' }, { path: 'src/middleware/redux.ts' }, { path: 'src/middleware/combine.ts' }, { path: 'src/middleware/subscribeWithSelector.ts' }] },
                 { label: 'Public entry points', entity: 'create', files: [{ path: 'src/index.ts', role: 're-exports vanilla + react' }] },
               ],
@@ -1162,17 +1235,17 @@ export const BearNames = () => {
             {
               type: 'prose',
               heading: 'Core + bindings + middleware',
-              md: 'The vanilla core has no React dependency. React bindings and the equality-fn bindings both wrap `createStore`; shallow/useShallow plug into selection; middleware wraps `set`/`get`/`api`; and three externals (React, storage, DevTools) sit at the edges.',
+              md: 'The vanilla core has no React dependency. React bindings and the equality-fn bindings both wrap `createStore`; shallow/useShallow plug into selection without depending on the core; middleware wraps `set` and patches the `api` (`get` is passed to every middleware, but wrapping it is an unused extension point). At the edges sit the externals: React — plus, for `zustand/traditional`, the `use-sync-external-store` shim — Immer for the immer middleware, a storage backend for persist, and the Redux DevTools extension for devtools. package.json lists react, @types/react, immer and use-sync-external-store as optional peer dependencies.',
             },
             { type: 'diagram', diagram: { kind: 'architecture', title: 'How the pieces fit' } },
             {
               type: 'decisions',
               title: 'Design decisions worth knowing',
               items: [
-                { title: 'No dependency tracking; selectors are manual', rationale: 'zustand compares selected slices by Object.is rather than tracking field reads (unlike Valtio/Jotai/Recoil). Simpler and React-concurrent-safe, at the cost of you choosing slices and using useShallow when needed.', status: 'locked' },
+                { title: 'No dependency tracking; selectors are manual', rationale: 'zustand compares selected slices by Object.is rather than tracking what you read — the comparison doc contrasts this with Valtio (property-access tracking) and Jotai/Recoil (atom dependency). Simpler and React-concurrent-safe, at the cost of you choosing slices and using useShallow when needed.', status: 'locked' },
                 { title: 'set merges one level by default', rationale: 'A pragmatic convenience so you can skip `...state` for the common case; nested updates are explicit. replace:true opts out entirely.', status: 'locked' },
-                { title: 'React binding sits on useSyncExternalStore', rationale: 'Uses React’s official external-store API to avoid zombie-child, concurrency, and context-loss bugs.', status: 'locked' },
-                { title: 'Middleware-modified set/get are not applied to raw getState/setState', rationale: 'Documented limitation in the README; raw api calls can bypass middleware semantics like immer drafts.', status: 'open-question', sme: 'Confirm whether any of our call sites use the raw api and would be surprised by this.' },
+                { title: 'React binding sits on useSyncExternalStore', rationale: 'Uses React’s public external-store API; adopted in April 2022 (#550), replacing a hand-rolled useReducer + refs subscription that handled the zombie-child case by hand — React’s hook now does that work. Context loss is avoided structurally (src/react.ts never uses React context); the concurrency-safety guarantee is React’s, described in the docs rather than implemented in zustand.', status: 'locked' },
+                { title: 'Middleware keep the wrapped set and api.setState in sync by convention, not by construction', rationale: 'Nothing forces a middleware to patch both. The README warns that middlewares modifying set/get are not applied to getState/setState; the shipped set-wrapping middleware (immer, persist, devtools, ssrSafe) patch api.setState on their normal paths, persist’s no-storage fallback is the one path that wraps set alone (a warning wrapper, same state semantics), and none wraps get.', status: 'open-question', sme: 'Do any of our custom middlewares wrap set without also patching api.setState?' },
               ],
             },
             {
@@ -1193,7 +1266,7 @@ export const BearNames = () => {
           type: 'mcq',
           prompt: 'What is a zustand middleware, structurally?',
           options: [
-            { id: 'a', text: 'A function that takes a state creator and returns a new state creator, intercepting set/get/api.', correct: true },
+            { id: 'a', text: 'A function that takes a state creator and returns a new state creator, wrapping set and/or patching the store api.', correct: true },
             {
               id: 'b',
               text: 'A React component that wraps your tree and provides the store via context.',
@@ -1210,11 +1283,11 @@ export const BearNames = () => {
             },
           ],
           explanation:
-            'Middleware is `(stateCreator) => stateCreator`. Inside it receives (set, get, api) and wraps the pieces it needs — combine prepends state, immer transforms the updater, persist writes to storage, redux attaches dispatch.',
+            'Middleware is `(stateCreator) => stateCreator`. Inside it receives (set, get, api) and wraps the pieces it needs — combine wraps none and just prepends state, immer transforms the updater and patches api.setState, persist writes to storage, redux attaches dispatch.',
           misconception: {
             id: 'mc-middleware-is-provider',
             trap: 'Middleware is a context Provider component',
-            correction: 'Middleware is a higher-order state creator that wraps set/get/api; you compose it per store.',
+            correction: 'Middleware is a higher-order state creator that wraps set and/or patches the api; you compose it per store.',
             relatedEntities: ['middleware', 'state-creator'],
           },
           difficulty: 'core',
@@ -1268,11 +1341,11 @@ export const BearNames = () => {
   ],
 
   glossary: [
-    { term: 'set', definition: 'The store updater. Computes the next state, bails out via Object.is, shallow-merges one level, then notifies every listener.' },
+    { term: 'set', definition: 'The store updater. Computes the next state, bails out via Object.is, shallow-merges one level (or replaces outright with the replace flag), then notifies every listener.' },
     { term: 'selector', definition: 'A (state) => slice function passed to the store hook; the component re-renders only when its selected slice changes by Object.is.' },
-    { term: 'useShallow', definition: 'Wraps a selector to compare its result one level deep, returning the previous reference when shallow-equal — the fix for the fresh-object re-render trap.' },
+    { term: 'useShallow', definition: 'Wraps a selector to compare its result one level deep, returning the previous reference when shallow-equal — the fix for the fresh-object selector trap (in v5 an infinite update loop, "Maximum update depth exceeded").' },
     { term: 'Object.is', definition: 'JavaScript strict reference equality. zustand uses it both to bail out of no-op updates and to decide whether a selected slice changed.' },
-    { term: 'middleware', definition: 'A higher-order state creator that wraps set/get/api to add behavior (persist, devtools, immer, redux, …).' },
+    { term: 'middleware', definition: 'A higher-order state creator that wraps set and/or patches the api to add behavior (persist, devtools, immer, redux, …).' },
     { term: 'useSyncExternalStore', definition: 'The official React API zustand uses to subscribe a component to the external store safely under concurrent rendering.' },
     { term: 'persist', definition: 'Middleware that writes state to storage and rehydrates it on creation, shallow-merging the stored state over the initial state by default.' },
   ],

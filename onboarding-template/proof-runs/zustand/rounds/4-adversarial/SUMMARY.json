@@ -1,0 +1,13 @@
+{
+  "round": 4,
+  "modules": [
+    "vanilla-store",
+    "selectors-rerenders",
+    "middleware-and-code"
+  ],
+  "note": "fourth pass on the three modules reworded after round 3; one omission-class refutation remained (the store closure also holds initialState); fixed and re-proved for vanilla-store in round 5 (the top-level run)",
+  "claims": 114,
+  "supported": 113,
+  "refuted": 1,
+  "unverifiable": 0
+}

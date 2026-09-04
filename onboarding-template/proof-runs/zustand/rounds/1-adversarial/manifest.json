@@ -1,0 +1,10 @@
+{
+  "system": "zustand",
+  "preppedAt": "2026-09-04T07:01:44.118Z",
+  "modules": [
+    "vanilla-store",
+    "react-binding",
+    "selectors-rerenders",
+    "middleware-and-code"
+  ]
+}

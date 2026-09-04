@@ -1,0 +1,39 @@
+{
+  "moduleId": "vanilla-store",
+  "title": "The store, from scratch",
+  "objective": "Understand what a zustand store actually is — a closure over a state value and a Set of listeners — and how set/get/subscribe work, with zero React involved.",
+  "citedPaths": [
+    "src/vanilla.ts",
+    "docs/learn/guides/immutable-state-and-merging.md"
+  ],
+  "claims": [
+    {
+      "id": "vs-what-b0",
+      "text": "A zustand store is a function-local `state` variable, the `initialState` it started from, plus a `Set` of listeners. It exposes four methods — `setState`, `getState`, `getInitialState`, `subscribe` — and nothing else. There is no proxy, no dependency tracking, no Provider. Everything else (React bindings, middleware) is built on top of this."
+    },
+    {
+      "id": "vs-what-b1",
+      "text": "Hold three things in your head: the **state** (one current value), the **listeners** (a Set of callbacks), and **set** (the only thing that changes state and then tells the listeners). That is the entire engine."
+    },
+    {
+      "id": "vs-what-b3",
+      "text": "[note] Notice `createState(setState, getState, api)` — your state creator is handed `set`, `get`, and the store itself. That is why actions you colocate in state can call `set` and `get`."
+    },
+    {
+      "id": "vs-set-b0",
+      "text": "Every update goes through `set`. Read its body carefully — four steps are baked in here and they explain almost every \"why didn’t my component update?\" question."
+    },
+    {
+      "id": "vs-set-b2",
+      "text": "1) **Compute**: if you passed a function, `set` calls it with the current state to get `next`. 2) **Bail-out**: if `Object.is(next, current)` it does nothing — no merge, no notify. 3) **Merge or replace**: by default it shallow-merges with `Object.assign({}, state, next)` — one level deep only. If you pass `replace: true`, or you omit `replace` and `next` is a primitive or `null`, it assigns `next` directly with no merge (an explicit `replace: false` always merges). 4) **Notify**: it then calls every listener with `(state, prevState)`."
+    },
+    {
+      "id": "vs-set-b4",
+      "text": "[gotcha] `set` merges **only one level**. From the docs: \"If you have a nested object, you need to merge them explicitly… `set((state) => ({ nested: { ...state.nested, count: state.nested.count + 1 } }))`.\""
+    },
+    {
+      "id": "vs-immutable-b0",
+      "text": "Because `set` bails on `Object.is`, the reliable way to trigger an update is to return a **new** object. Mutating the existing state in place never notifies a listener (`set` sees the same reference and returns early); the README states the rule plainly: state has to be updated immutably."
+    }
+  ]
+}

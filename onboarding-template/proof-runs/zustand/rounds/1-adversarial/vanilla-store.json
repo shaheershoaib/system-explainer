@@ -1,0 +1,150 @@
+{
+  "moduleId": "vanilla-store",
+  "claims": [
+    {
+      "claim": "A zustand vanilla store is a function-local `state` variable plus a `Set` of listeners.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:63 `let state: TState` and src/vanilla.ts:64 `const listeners: Set<Listener> = new Set()` inside createStoreImpl; both are closure-local, nothing else holds them.",
+      "note": "The closure also retains a third value the course does not mention: `initialState` (src/vanilla.ts:95), which is what getInitialState (85-86) returns."
+    },
+    {
+      "claim": "The vanilla store exposes exactly four methods: setState, getState, getInitialState, subscribe, and nothing else.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:94 `const api = { setState, getState, getInitialState, subscribe }` is what is returned (96). tests/vanilla/basic.test.ts:19-38 inline snapshot shows exactly those four keys on both the store passed to the creator and the returned store. docs/reference/apis/create-store.md:45-46 lists the same four.",
+      "note": "True for createStore only. `create` returns a hook FUNCTION with those four attached (src/react.ts:56-58), and middleware extend the surface: persist adds `api.persist` (src/middleware/persist.ts:337), subscribeWithSelector replaces `api.subscribe` with a selector-capable overload (src/middleware/subscribeWithSelector.ts:51)."
+    },
+    {
+      "claim": "The store uses no Proxy.",
+      "verdict": "supported",
+      "evidence": "grep for `Proxy`/`proxy` across src/ returns zero hits (case-insensitive hits are only devtools.ts `trackedConnections` bookkeeping). src/vanilla.ts holds plain variables and Object.assign (78). docs/learn/getting-started/comparison.md:258-296 contrasts zustand with valtio's `proxy`.",
+      "note": "Negative claim; supported by absence across the whole src/ tree."
+    },
+    {
+      "claim": "The store does no dependency tracking.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:66-92 has no tracking mechanism; listeners are notified unconditionally on every accepted set (79). The React hook (src/react.ts:30-34) uses useSyncExternalStore with an EXPLICIT selector argument, not automatic dependency collection. Only `track` hits in src/ are devtools connection names (src/middleware/devtools.ts:119-166).",
+      "note": "Negative claim; supported by absence."
+    },
+    {
+      "claim": "Zustand ships no Provider; no Provider is required.",
+      "verdict": "supported",
+      "evidence": "grep for `Provider`/`createContext`/`useContext` across src/ returns zero hits. README.md:45 'Use the hook anywhere, no providers are needed.' README.md:63 'Doesn't wrap your app in context providers'. docs/reference/index.md:53: the old `zustand/context` createContext was deprecated in v4 and removed in v5 (repo is v5.0.15 per package.json).",
+      "note": "Docs do show user-built Providers with React's own createContext (README.md:443-458, docs/learn/guides/nextjs.md:114-136); those are React, not zustand, so the claim stands."
+    },
+    {
+      "claim": "The React bindings are built on top of the vanilla store.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:2 `import { createStore } from './vanilla.ts'`; src/react.ts:54 `const api = createStore(createState)` then 56-58 wraps it in a hook and Object.assigns the api onto it. src/traditional.ts:3 does the same. src/index.ts:1-2 re-exports vanilla then react."
+    },
+    {
+      "claim": "Middleware are built on top of the vanilla store.",
+      "verdict": "supported",
+      "evidence": "Every middleware imports its types from vanilla (src/middleware/{combine,immer,redux,ssrSafe,subscribeWithSelector}.ts:1) and operates by wrapping the vanilla api: devtools.ts:216 `api.setState = ...`, persist.ts:231 `api.setState = ...`, immer.ts:76 `store.setState = ...`, ssrSafe.ts:22 `api.setState = ssrSet`, subscribeWithSelector.ts:51 `api.subscribe = ...`. None reach the closure-local `state` directly."
+    },
+    {
+      "claim": "The state is one current value held in a single variable.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:63 `let state: TState`; getState (83) returns it directly."
+    },
+    {
+      "claim": "The listeners are a Set of callbacks.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:64 `const listeners: Set<Listener> = new Set()`; subscribe adds/deletes on it (89, 91); Listener type is `(state, prevState) => void` (62)."
+    },
+    {
+      "claim": "set is the only thing that changes state.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:75 (inside setState) is the only reassignment of `state` after construction; `state` is closure-local (63) so nothing outside can reassign it.",
+      "note": "Strictly, `state` is also assigned once at construction, src/vanilla.ts:95 `(state = createState(setState, getState, api))`, without notifying anyone. And in-place MUTATION of the object held in `state` bypasses set entirely (see the immutability claims below)."
+    },
+    {
+      "claim": "After changing state, set tells the listeners.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:79 `listeners.forEach((listener) => listener(state, previousState))`, executed synchronously inside setState right after the assignment (75-78)."
+    },
+    {
+      "claim": "The state creator is invoked as createState(setState, getState, api), i.e. handed set, get, and the store itself.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:95 `const initialState = (state = createState(setState, getState, api))`; the `api` passed is the very object returned at 96. tests/vanilla/basic.test.ts:19-30 snapshot shows params `[Function, Function, {getInitialState, getState, setState, subscribe}]`. docs/reference/apis/create-store.md:39 says the same."
+    },
+    {
+      "claim": "Actions colocated in state can call set and get because they close over the arguments the creator received.",
+      "verdict": "supported",
+      "evidence": "tests/vanilla/basic.test.ts:46-54 (`inc: () => set(...)` then `store.getState().inc()` yields count 1) and 56-71 (`getState1: () => get()`); docs/learn/guides/immutable-state-and-merging.md:13-16 shows the same pattern."
+    },
+    {
+      "claim": "Every update goes through set.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:63 `state` is closure-local; the only post-construction write is src/vanilla.ts:75 inside setState. Middleware also route through it (devtools.ts:216, persist.ts:231 wrap and call the original setState).",
+      "note": "'Update' here means a reassignment of `state`. In-place mutation of the held object is possible and bypasses set (docs/reference/apis/create-store.md Troubleshooting shows exactly that failure mode)."
+    },
+    {
+      "claim": "The body of set bakes in three behaviors: bail-out, shallow merge, notify.",
+      "verdict": "refuted",
+      "evidence": "src/vanilla.ts:66-81 contains five distinct behaviors, not three: (1) 69-72 resolves a function `partial` by calling it with the current state; (2) 73 Object.is bail-out; (3) 76 decides replace-vs-merge via `replace ?? (typeof nextState !== 'object' || nextState === null)`; (4) 77 assigns nextState directly OR 78 Object.assign-merges; (5) 79 notifies. tests/vanilla/basic.test.ts:109-120 (`setState({ b: 2 }, true)` yields `{ b: 2 }`), 122-138 (setState(null) yields null), 140-147 (numeric state) exercise the non-merge paths.",
+      "note": "The three the course names are real, but the omitted `replace` flag decides whether merging happens at all and is documented in the course's own cited doc (docs/learn/guides/immutable-state-and-merging.md:53-59 'Replace flag'). The omitted updater-function resolution is what makes `set((state) => ...)` work."
+    },
+    {
+      "claim": "Bail-out: if Object.is(next, current) set does nothing, no merge and no notify.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 `if (!Object.is(nextState, state)) { ... }` wraps the assignment (74-78) AND the notify (79), so an identical value skips both. tests/vanilla/subscribe.test.tsx:6-14 (same identity: listener not called), tests/vanilla/basic.test.ts:99-107 (NaN to NaN: not called, which is why Object.is rather than === is used).",
+      "note": "`next` is the RESOLVED value: when `partial` is a function it is called first (69-72), then compared."
+    },
+    {
+      "claim": "Otherwise (when not bailing out) set does Object.assign({}, state, next).",
+      "verdict": "refuted",
+      "evidence": "src/vanilla.ts:75-78: the merge only happens when `replace` is falsy AND nextState is a non-null object; otherwise `state = nextState` (77) with no merge. Condition at 76: `(replace ?? (typeof nextState !== 'object' || nextState === null)) ? nextState : Object.assign({}, state, nextState)`. tests/vanilla/basic.test.ts:109-120 (replace=true overrides instead of merging), 122-130 (object store set to null), 132-147 (primitive states).",
+      "note": "Correct statement: in the default case (no replace flag, object next) it shallow-merges; with `replace === true`, or a primitive/null next, it replaces. The course's cited doc says this at docs/learn/guides/immutable-state-and-merging.md:53-59 and docs/reference/apis/create-store.md:124-126."
+    },
+    {
+      "claim": "The merge is shallow: one level deep only.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:78 `Object.assign({}, state, nextState)`; Object.assign copies own enumerable properties by reference, one level. docs/learn/guides/immutable-state-and-merging.md:35 'The `set` function merges state at only one level.'; docs/reference/apis/create-store.md:125 'By default, `set` function performs a shallow merge'."
+    },
+    {
+      "claim": "Notify: set then calls every listener with (state, prevState), new state first.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:74 `const previousState = state`, then 79 `listeners.forEach((listener) => listener(state, previousState))` after `state` has been reassigned (75). Listener type src/vanilla.ts:13 and 62 `(state: T, prevState: T) => void`. tests/vanilla/subscribe.test.tsx:16-24 asserts the listener is called with (newState, initialState)."
+    },
+    {
+      "claim": "When the argument to set is a function, set calls it with the current state to produce next before comparing/merging.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:69-72 `const nextState = typeof partial === 'function' ? partial(state) : partial`. tests/vanilla/basic.test.ts:140-147 `store.setState((c) => c + 1)` on numeric state yields 2.",
+      "note": "Added by the checker: a behavior of set's body the course's three-item list omits, though every example in the module relies on it."
+    },
+    {
+      "claim": "set merges only one level (the gotcha).",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/immutable-state-and-merging.md:35 'The `set` function merges state at only one level.'; code src/vanilla.ts:78 Object.assign."
+    },
+    {
+      "claim": "The docs say: \"If you have a nested object, you need to merge them explicitly\".",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/immutable-state-and-merging.md:36 reads verbatim 'If you have a nested object, you need to merge them explicitly. You will use the spread operator pattern like so:'.",
+      "note": "The course's ellipsis elides 'You will use the spread operator pattern like so:' and the code fence; faithful."
+    },
+    {
+      "claim": "The docs show the nested-merge example `set((state) => ({ nested: { ...state.nested, count: state.nested.count + 1 } }))`.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/immutable-state-and-merging.md:43-47: `inc: () => set((state) => ({ nested: { ...state.nested, count: state.nested.count + 1 }, })),` spread over four lines.",
+      "note": "Course collapses the docs' multi-line snippet to one line and drops the trailing comma; token-for-token identical otherwise."
+    },
+    {
+      "claim": "Because set bails on Object.is, returning a NEW object is the reliable way to trigger an update.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 bail-out on identical reference; tests/vanilla/subscribe.test.tsx:6-14 (setState(initialState) with the same reference: not called) vs 16-24 (setState({ ...getState() }) fresh copy: called). docs/reference/apis/create-store.md Troubleshooting: 'The reliable way to get the behavior you're looking for is to create a new object and pass it to setPerson.'"
+    },
+    {
+      "claim": "Mutating the existing state object in place triggers no update that React or any listener is notified of.",
+      "verdict": "supported",
+      "evidence": "Listeners are only ever invoked at src/vanilla.ts:79, inside setState; an in-place mutation never reaches setState, and calling set with the same (now mutated) reference bails at 73. React only re-renders on the subscribe callback (src/react.ts:30-31 useSyncExternalStore(api.subscribe, ...)). docs/reference/apis/create-store.md Troubleshooting: 'These input fields don't work because the oninput handlers mutate the state'.",
+      "note": "'Nothing ... can detect' is slightly overstated: the mutated values ARE visible to anyone who calls getState() (src/vanilla.ts:83 returns the same object) and would show up in React's getSnapshot (src/react.ts:32) on the next render triggered by something else. No NOTIFICATION fires, which is the operative point."
+    },
+    {
+      "claim": "The vanilla store involves zero React.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts has no import statements at all (file begins at line 1 with a type alias). tests/vanilla/basic.test.ts:5-6 `vi.mock('react', () => ({}))` with the comment 'To avoid include react deps on vanilla version'. React enters only in src/react.ts:1.",
+      "note": "From the module objective rather than a numbered claim."
+    }
+  ]
+}

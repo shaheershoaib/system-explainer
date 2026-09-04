@@ -1,0 +1,79 @@
+{
+  "moduleId": "vanilla-store",
+  "title": "The store, from scratch",
+  "objective": "Understand what a zustand store actually is — a closure over a state value and a Set of listeners — and how set/get/subscribe work, with zero React involved.",
+  "quiz": [
+    {
+      "id": "vs-q-merge",
+      "type": "mcq",
+      "prompt": "You call `set({ a: 1 })` on a store whose state is `{ a: 0, b: { x: 1 } }`. What is the resulting state?",
+      "options": [
+        {
+          "key": "a",
+          "text": "{ a: 1, b: {} } — b is deep-reset."
+        },
+        {
+          "key": "b",
+          "text": "{ a: 1 } — set replaces the whole state."
+        },
+        {
+          "key": "c",
+          "text": "{ a: 1, b: { x: 1 } } — top-level merge keeps b untouched."
+        }
+      ]
+    },
+    {
+      "id": "vs-q-bail",
+      "type": "mcq",
+      "prompt": "An action does `state.count++` directly and never calls set. What do subscribers see?",
+      "options": [
+        {
+          "key": "a",
+          "text": "They all fire because the value changed."
+        },
+        {
+          "key": "b",
+          "text": "Nothing — no listener fires."
+        }
+      ]
+    },
+    {
+      "id": "vs-q-spotbug",
+      "type": "spot-bug",
+      "prompt": "This action should add a bear, but subscribers never update. Which line is the bug?",
+      "language": "js",
+      "lines": [
+        "increasePopulation: () => {",
+        "  const s = get()",
+        "  s.bears = s.bears + 1",
+        "  set(s)",
+        "}"
+      ],
+      "instruction": "Return { buggyLine: <1-based line number>, fix: <how to fix it> }."
+    },
+    {
+      "id": "vs-q-order",
+      "type": "ordering",
+      "prompt": "Put the steps of a single `set(updater)` call in order.",
+      "items": [
+        {
+          "key": "a",
+          "text": "Call every listener with (state, prevState)"
+        },
+        {
+          "key": "b",
+          "text": "Shallow-merge nextState into state (unless replace)"
+        },
+        {
+          "key": "c",
+          "text": "Check Object.is(nextState, state) — bail out if equal"
+        },
+        {
+          "key": "d",
+          "text": "Run the updater function against the current state to get nextState"
+        }
+      ],
+      "instruction": "Return the keys as an array in the correct order."
+    }
+  ]
+}

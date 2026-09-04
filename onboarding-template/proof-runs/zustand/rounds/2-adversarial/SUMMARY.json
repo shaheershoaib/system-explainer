@@ -1,0 +1,8 @@
+{
+  "round": 2,
+  "note": "second adversarial pass, after the round-1 corrections; the remaining refutations were precision errors in the corrections themselves (an unqualified replace-flag sentence, a universal quantifier over middleware, an attribution to useSyncExternalStore); fixed and re-proved in round 3 (the top-level run)",
+  "claims": 149,
+  "supported": 142,
+  "refuted": 3,
+  "unverifiable": 4
+}

@@ -1,0 +1,320 @@
+{
+  "moduleId": "middleware-and-code",
+  "claims": [
+    {
+      "claim": "A middleware takes a state creator and returns a new state creator; inside it receives (set, get, api).",
+      "verdict": "supported",
+      "evidence": "src/middleware/immer.ts:73 '(initializer) => (set, get, store) =>'; src/middleware/persist.ts:187 '(config, baseOptions) => (set, get, api) =>'; src/middleware/devtools.ts:188-190; src/middleware/redux.ts:39; src/middleware/ssrSafe.ts:15; src/middleware/subscribeWithSelector.ts:47; src/middleware/combine.ts:14. The contract is StateCreator in src/vanilla.ts:28-37 '(setState, getState, store) => U'."
+    },
+    {
+      "claim": "Middlewares typically wrap set and/or patch methods on api.",
+      "verdict": "supported",
+      "evidence": "set wrapped + api.setState patched: src/middleware/immer.ts:76,84; persist.ts:231,237; devtools.ts:216,265; ssrSafe.ts:22-23. api patched: subscribeWithSelector.ts:51 (api.subscribe), persist.ts:337 (api.persist), devtools.ts:246 (api.devtools), redux.ts:42 (api.dispatch)."
+    },
+    {
+      "claim": "combine wraps none of set, get or api.",
+      "verdict": "supported",
+      "evidence": "src/middleware/combine.ts:14 '(...args) => Object.assign({}, initialState, (create as any)(...args))' forwards the (set, get, api) tuple untouched and assigns nothing on api. docs/learn/guides/advanced-typescript.md:542 'combine - no mutator as combine does not mutate the store'."
+    },
+    {
+      "claim": "combine merges an initial state object in front of the creator's result.",
+      "verdict": "supported",
+      "evidence": "src/middleware/combine.ts:14 Object.assign({}, initialState, create(...args)) - initialState is the earlier source, so the creator's keys win on collision."
+    },
+    {
+      "claim": "combine infers the state types for you.",
+      "verdict": "supported",
+      "evidence": "src/middleware/combine.ts:5-13 returns StateCreator<Write<T, U>, Mps, Mcs> with T and U inferred from the two arguments; docs/learn/guides/advanced-typescript.md:136 'you can also use combine, which infers the state so that you do not need to type it'; docs/reference/middlewares/combine.md:11."
+    },
+    {
+      "claim": "immer, persist, devtools and ssrSafe each patch api.setState in addition to wrapping the set handed to the creator.",
+      "verdict": "supported",
+      "evidence": "src/middleware/immer.ts:76 'store.setState = ...' then :84 'initializer(store.setState, get, store)'; persist.ts:231 'api.setState = (state, replace) => { savedSetState(...); return setItem() }' and :237-240 wrapped set; devtools.ts:216 'api.setState = ((state, replace, nameOrAction) => ...' and :265 'fn(api.setState, get, api)'; ssrSafe.ts:22-23 'api.setState = ssrSet; return config(ssrSet, get, api)'."
+    },
+    {
+      "claim": "No shipped middleware wraps set without also patching api.setState, so the raw api and the creator's set always stay in sync.",
+      "verdict": "refuted",
+      "evidence": "src/middleware/persist.ts:208-219: when storage is unavailable (createJSONStorage returned undefined, e.g. window undefined on the server), persist returns config((...args) => { console.warn('[zustand persist middleware] Unable to update item...'); set(...args) }, get, api) - the creator's set IS wrapped (warning wrapper) while api.setState is left untouched, so the two diverge on that path.",
+      "note": "Edge case only: the wrapper adds a console.warn and still calls the original set, so state semantics are identical; the universal 'every'/'stay in sync' wording is what fails. combine, redux and subscribeWithSelector never wrap set, so they are not counterexamples (combine.ts:14, redux.ts:39-48, subscribeWithSelector.ts:69)."
+    },
+    {
+      "claim": "immer assigns store.setState and runs function updaters through immer's produce.",
+      "verdict": "supported",
+      "evidence": "src/middleware/immer.ts:76-82 'store.setState = (updater, replace, ...args) => { const nextState = typeof updater === \"function\" ? produce(updater) : updater; return set(nextState, replace, ...args) }'; produce imported at :1. Non-function updaters bypass produce (tests/immer.test.tsx:23-31)."
+    },
+    {
+      "claim": "persist reassigns api.setState so that storage is written after each change.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:229-234 'const savedSetState = api.setState; api.setState = (state, replace) => { savedSetState(state, replace); return setItem() }'; setItem at :221-227 writes options.partialize({...get()}) plus version to storage."
+    },
+    {
+      "claim": "devtools reassigns api.setState and reports each change to the extension.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:216-245: api.setState = (state, replace, nameOrAction) => { const r = set(state, replace); ... connection?.send(action, get()) ... }.",
+      "note": "Only when the extension is present and enabled: devtools.ts:200-210 returns fn(set, get, api) unwrapped otherwise. Reporting is also skipped while isRecording is false (:218, toggled by PAUSE_RECORDING :415-416)."
+    },
+    {
+      "claim": "ssrSafe swaps in a throwing setter on the server.",
+      "verdict": "supported",
+      "evidence": "src/middleware/ssrSafe.ts:13 'isSSR = typeof window === \"undefined\"'; :19-23 'const ssrSet = () => { throw new Error(\"Cannot set state of Zustand store in SSR\") }; api.setState = ssrSet; return config(ssrSet as never, get, api)'.",
+      "note": "Exported as unstable_ssrSafe (src/middleware.ts:17) and marked experimental (ssrSafe.ts:3-5)."
+    },
+    {
+      "claim": "subscribeWithSelector overwrites api.subscribe.",
+      "verdict": "supported",
+      "evidence": "src/middleware/subscribeWithSelector.ts:50-68 'const origSubscribe = api.subscribe; api.subscribe = ((selector, optListener, options) => { ... return origSubscribe(listener) })'."
+    },
+    {
+      "claim": "persist adds api.persist.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:337-369 assigns api.persist = { setOptions, clearStorage, getOptions, rehydrate, hasHydrated, onHydrate, onFinishHydration }."
+    },
+    {
+      "claim": "devtools adds api.devtools.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:246-256 '(api as StoreApi<S> & StoreDevtools<S>).devtools = { cleanup: () => {...} }'."
+    },
+    {
+      "claim": "redux attaches a dispatch to the api.",
+      "verdict": "supported",
+      "evidence": "src/middleware/redux.ts:42-45 '(api as any).dispatch = (action) => { set((state) => reducer(state, action), false, action); return action }'; :46 also sets api.dispatchFromDevtools = true."
+    },
+    {
+      "claim": "get is passed to every middleware, but none of the built-in middlewares wrap it.",
+      "verdict": "supported",
+      "evidence": "Each impl receives get as its 2nd arg (immer.ts:73, persist.ts:187, devtools.ts:190, redux.ts:39 as unused '_get', ssrSafe.ts:15, subscribeWithSelector.ts:47, combine.ts:14 via ...args) and forwards the ORIGINAL get to the inner creator (immer.ts:84, persist.ts:241, devtools.ts:265, ssrSafe.ts:17/23, subscribeWithSelector.ts:69). grep -E 'get\\s*=|getState\\s*=' over src/middleware finds no reassignment of get/getState (persist.ts:245 reassigns getInitialState only)."
+    },
+    {
+      "claim": "persist wraps set so that each change writes the partialized state to storage.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:236-243 creator receives '(...args) => { set(...args); return setItem() }'; setItem :221-227 'const state = options.partialize({ ...get() }); storage.setItem(options.name, { state, version: options.version })'."
+    },
+    {
+      "claim": "On creation persist reads storage (hydrates).",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:371-373 'if (!options.skipHydration) { hydrate() }' runs inside the creator; hydrate reads via 'toThenable(storage.getItem.bind(storage))(options.name)' at :270.",
+      "note": "Skipped when skipHydration: true (persist.ts:112-120, 371) or when no storage is available (:208-219)."
+    },
+    {
+      "claim": "persist runs version / migrate on the stored value.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:273-289: if typeof stored.version === 'number' and it differs from options.version, options.migrate(stored.state, stored.version) is called (sync or Promise, :277-286); with no migrate it console.errors (:287-289); matching version passes stored.state straight through (:291). Tests: tests/persistSync.test.tsx:136-171, 173-198."
+    },
+    {
+      "claim": "persist shallow-merges the stored state over the initial state.",
+      "verdict": "supported",
+      "evidence": "Default merge src/middleware/persist.ts:193-196 '({ ...currentState, ...(persistedState as object) })'; applied at :302-305 'options.merge(migratedState, get() ?? configResult)' then :307 'set(stateFromStorage, true)'. Test tests/persistSync.test.tsx:266-291: initial { count: 0, unstorableMethod } + stored { count: 1 } => getState() equals { count: 1, unstorableMethod }.",
+      "note": "Strictly it merges over the CURRENT state 'get() ?? configResult'; on initial synchronous hydration get() is still undefined (src/vanilla.ts:95 assigns state only after the creator returns) so that is the initial state, but a later api.persist.rehydrate() merges over the live state."
+    },
+    {
+      "claim": "Storage defaults to localStorage via createJSONStorage.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:190 'storage: createJSONStorage<S, void>(() => window.localStorage)'; JSDoc :76 '@default createJSONStorage(() => window.localStorage)'; docs/reference/middlewares/persist.md:54."
+    },
+    {
+      "claim": "The default merge is a shallow merge of persisted state over current state.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:193-196 spread merge; JSDoc :107-109 'By default, this function does a shallow merge'; docs/reference/middlewares/persist.md:70-71 'Defaults to a shallow merge'."
+    },
+    {
+      "claim": "With the default merge, a persisted nested object replaces the whole nested object from the initial state, dropping newly added nested defaults.",
+      "verdict": "supported",
+      "evidence": "Follows from the top-level-only spread at src/middleware/persist.ts:193-196. docs/reference/middlewares/persist.md:710-756 ('Persisting a state with nested objects') sets up stored '{ position: { y: 100 } } // missing x field' and reaches for @fastify/deepmerge with a custom 'merge: (persisted, current) => deepMerge(current, persisted)' precisely because the default would not fill in x."
+    },
+    {
+      "claim": "A custom merge option exists to override the default merge.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:110 'merge?: (persistedState: unknown, currentState: S) => S'; used at :302; test tests/persistSync.test.tsx:295-333 'can custom merge the stored state'."
+    },
+    {
+      "claim": "A migrate option exists for handling state-shape changes.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:97-105 'version' and 'migrate?: (persistedState, version) => PersistedState | Promise<PersistedState>'; executed at :277-286."
+    },
+    {
+      "claim": "The redux middleware wires a reducer plus an initial state.",
+      "verdict": "supported",
+      "evidence": "src/middleware/redux.ts:39-48 '(reducer, initial) => (set, _get, api) => { api.dispatch = (action) => { set((state) => reducer(state, action), false, action); return action }; ... return { dispatch, ...initial } }'."
+    },
+    {
+      "claim": "redux attaches dispatch to both the state and the api.",
+      "verdict": "supported",
+      "evidence": "src/middleware/redux.ts:42 (api.dispatch) and :48 'return { dispatch: (...args) => (api as any).dispatch(...args), ...initial }'; README.md:358 'adds a dispatch function to the state itself and the vanilla API'."
+    },
+    {
+      "claim": "devtools connects the store to the Redux DevTools extension.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:200-203 reads window.__REDUX_DEVTOOLS_EXTENSION__; :212-213 and :131-154 call extensionConnector.connect(options); :265-280 connection.init(initialState).",
+      "note": "Gated by '(enabled ?? import.meta.env?.MODE !== \"production\") && window.__REDUX_DEVTOOLS_EXTENSION__' (:200-206); without it the creator runs unwrapped (:208-210)."
+    },
+    {
+      "claim": "devtools labels each change as an action.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:219-229 builds { type } from the 3rd setState arg, else anonymousActionType || findCallerName(new Error().stack) || 'anonymous'; :231 and :234-243 connection.send(action, state), prefixing '${store}/' when the store option is set."
+    },
+    {
+      "claim": "devtools replaces api.setState with a three-argument version that also reports to the extension.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:216 'api.setState = ((state, replace, nameOrAction: Action) => { const r = set(state, replace); ... connection?.send(...) ... })'; the same function is handed to the creator at :265. Types: NamedSet :106, StoreDevtools :76-77 '[...TakeTwo<Sa1>, action?: Action]'."
+    },
+    {
+      "claim": "devtools subscribes to the extension's messages.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:301-308 '(connection as ...).subscribe((message) => { switch (message.type) { ... } })'."
+    },
+    {
+      "claim": "RESET, ROLLBACK, JUMP_TO_STATE / JUMP_TO_ACTION and IMPORT_STATE write state back into the store through setStateFromDevtools.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:358-359 RESET -> setStateFromDevtools(initialState); :372-381 ROLLBACK -> setStateFromDevtools(state / state[store]); :383-396 JUMP_TO_STATE / JUMP_TO_ACTION -> setStateFromDevtools; :398-407 IMPORT_STATE -> setStateFromDevtools(lastComputedState[...]). setStateFromDevtools defined :258-263 (calls set with isRecording temporarily false).",
+      "note": "Also writes back on an ACTION message of type '__setState' (:320-347). COMMIT only re-inits the connection (:365-370); PAUSE_RECORDING toggles isRecording (:415-416)."
+    },
+    {
+      "claim": "That write-back is what makes time-travel debugging work.",
+      "verdict": "supported",
+      "evidence": "JUMP_TO_STATE / JUMP_TO_ACTION are the extension's time-travel messages and are handled by applying the received state via setStateFromDevtools (src/middleware/devtools.ts:383-396); docs/reference/middlewares/devtools.md:3 'How to time-travel debug your store'.",
+      "note": "Interpretive framing, but grounded: without those handlers the extension could only display history, not move the store."
+    },
+    {
+      "claim": "The README warns that middlewares that modify set or get are not applied to getState and setState.",
+      "verdict": "supported",
+      "evidence": "README.md:250 ':warning: Note that middlewares that modify `set` or `get` are not applied to `getState` and `setState`.' (verbatim, in the 'Using zustand without React' section)."
+    },
+    {
+      "claim": "That README note describes a hand-written middleware that wraps only the set argument passed to the creator without also reassigning api.setState.",
+      "verdict": "unverifiable",
+      "evidence": "README.md:228-250 gives the note bare, after the vanilla createStore example, with no scoping to hand-written vs shipped middleware; no file in the repo states this interpretation.",
+      "note": "The narrow reading is CONSISTENT with the code (shipped set-wrapping middleware does patch api.setState: immer.ts:76, persist.ts:231, devtools.ts:216, ssrSafe.ts:22), and the literal README sentence is over-broad relative to that code, but 'what the README describes' is the course's inference rather than a documented fact."
+    },
+    {
+      "claim": "In immer.ts, persist.ts, devtools.ts and ssrSafe.ts the middleware that wraps set also patches api.setState.",
+      "verdict": "supported",
+      "evidence": "src/middleware/immer.ts:76+84; src/middleware/persist.ts:231+237; src/middleware/devtools.ts:216+265; src/middleware/ssrSafe.ts:22-23.",
+      "note": "See the refuted row above for persist's storage-unavailable fallback (persist.ts:208-219), the one path where the wrapped set has no matching api.setState patch."
+    },
+    {
+      "claim": "The bare store.setState((s) => { s.count = 10 }) goes through immer's draft handling.",
+      "verdict": "supported",
+      "evidence": "src/middleware/immer.ts:76-82 replaces store.setState so function updaters run through produce; tests/immer.test.tsx:64-73 'should work with vanilla createStore': createStore<State>()(immer(() => ({ count: 0 }))); store.setState((state) => { state.count = 10 }); expect(store.getState().count).toBe(10)."
+    },
+    {
+      "claim": "The repo's own test (tests/immer.test.tsx) asserts that the bare store.setState mutation works under immer.",
+      "verdict": "supported",
+      "evidence": "tests/immer.test.tsx:64-73 (vanilla createStore + store.setState draft mutation, expects count 10); tests/immer.test.tsx:33-39 also exercises store-level setState with replace=true."
+    },
+    {
+      "claim": "The docs' logger example patches api.setState alongside the wrapped set (docs/learn/guides/advanced-typescript.md).",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/advanced-typescript.md:307-319: loggedSet wraps set (:308-311) AND 'const setState = store.setState; store.setState = (...a) => { setState(...a); console.log(...) }' (:312-316), then 'return f(loggedSet, get, store)' (:318)."
+    },
+    {
+      "claim": "README 'TypeScript Usage' says to write create<State>()(...) with an extra empty () instead of create(...).",
+      "verdict": "supported",
+      "evidence": "README.md:467 '## TypeScript Usage'; :469 'Basic typescript usage doesn't require anything special except for writing `create<State>()(...)` instead of `create(...)`'; example :481-493 uses create<BearState>()(devtools(persist(...)))."
+    },
+    {
+      "claim": "The first (empty) call is where you annotate the state type.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:48-50 overload '<T>(): <Mos extends [StoreMutatorIdentifier, unknown][] = []>(initializer: StateCreator<T, [], Mos>) => UseBoundStore<Mutate<StoreApi<T>, Mos>>' - T is the only generic on the outer call; same shape in src/vanilla.ts:48-50 and src/traditional.ts:60-63. Runtime: src/react.ts:63-64 returns createImpl itself when called with no argument."
+    },
+    {
+      "claim": "The docs explain the state type cannot be inferred because the state generic is invariant.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/advanced-typescript.md:25-49 'Why can't we simply infer the type from the initial state?' ... ':29 **TLDR**: Because state generic `T` is invariant.'"
+    },
+    {
+      "claim": "The second call lets TypeScript infer everything else, chiefly the middleware mutator list.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:48-50: the inner call's only generic is Mos, inferred from initializer: StateCreator<T, [], Mos>. Compile check (tsc 5.9.3 against the repo's src via path mapping, scratch case c): create<State>()(devtools(persist(...))) type-checks with no error."
+    },
+    {
+      "claim": "Generic inference is all-or-nothing, per the docs' 'Why the currying' section.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/advanced-typescript.md:91-134 ('Why the currying `()(...)`?'); :111 'You can either pass all generics or none.'; :132 'Zustand has the same use case when we want to annotate the state (the first type parameter) but allow other parameters to get inferred.'"
+    },
+    {
+      "claim": "Without middleware, plain create<State>((set) => ...) type-checks.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:45-47 first overload '<T, Mos = []>(initializer: StateCreator<T, [], Mos>)' - a plain creator has Mos = []. Compile check (tsc 5.9.3, scratch case a against repo src): create<State>((set) => ({...})) produces no error."
+    },
+    {
+      "claim": "The repo's own tests use the uncurried create<State>(...) form.",
+      "verdict": "supported",
+      "evidence": "tests/basic.test.tsx:51,72,132,167,195,326,426,443,460,471; tests/types.test.tsx:41,112,144; tests/middlewareTypes.test.tsx:42 (describe 'counter state spec (no middleware)'); tests/ssr.test.tsx:16; tests/vanilla/basic.test.ts:47,63,87,100 (createStore<T>(...)). 28 uncurried call sites vs 30 curried."
+    },
+    {
+      "claim": "create<State>(devtools(persist(...))) with only State given fails: the mutator list defaults to [] and the middleware types no longer line up.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:45 'Mos extends [StoreMutatorIdentifier, unknown][] = []' (default when T is given explicitly); src/vanilla.ts:37 StateCreator carries '$$storeMutators?: Mos'. Compile check (tsc 5.9.3, scratch case b against repo src) -> error TS2379: Argument of type 'StateCreator<State, [], [[\"zustand/devtools\", never], [\"zustand/persist\", State]], State>' is not assignable to parameter of type 'StateCreator<State, [], []>' ... Type '[[\"zustand/devtools\", never], [\"zustand/persist\", State]]' is not assignable to type '[]'. Source has 2 element(s) but target allows only 0. docs/learn/guides/advanced-typescript.md:389-411 likewise show that the uncurried form requires passing the mutator tuple explicitly.",
+      "note": "Aside (not a course claim): the docs' explicit tuple at advanced-typescript.md:401-407 lists ['zustand/persist', BearState] before ['zustand/devtools', never]; the compiler-derived order for devtools(persist(...)) is devtools first, and create<State, [['zustand/devtools', never], ['zustand/persist', State]]>(...) compiles (scratch case d)."
+    },
+    {
+      "claim": "The vanilla core is the foundation; the React bindings, the traditional (equality-fn) bindings and the middleware all build on it.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:2 'import { createStore } from \"./vanilla.ts\"' (used :54); src/traditional.ts:3 (used :70); every middleware imports its types from '../vanilla.ts' (combine.ts:1, immer.ts:3, persist.ts:1-5, devtools.ts:3-7, redux.ts:1, ssrSafe.ts:1, subscribeWithSelector.ts:1) and returns a StateCreator consumed by createStore.",
+      "note": "Middleware imports from vanilla are type-only; the runtime coupling is the (set, get, api) contract of src/vanilla.ts:95."
+    },
+    {
+      "claim": "src/vanilla/shallow.ts imports nothing.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:1-74 contains no import statement (only local helpers isIterable, hasIterableEntries, compareEntries, compareIterables and the exported shallow)."
+    },
+    {
+      "claim": "src/react/shallow.ts imports only React and shallow.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:1 'import React from \"react\"'; :2 'import { shallow } from \"../vanilla/shallow.ts\"'; no other imports."
+    },
+    {
+      "claim": "shallow/useShallow plug into selection alongside the core (as a selector wrapper or equality function).",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:4-12 useShallow returns a selector wrapper that reuses the previous result when shallow-equal; README.md:107-117 'useBearStore(useShallow((state) => ...))'; README.md:216-221 subscribe with '{ equalityFn: shallow }'."
+    },
+    {
+      "claim": "The vanilla core has no React dependency.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:1-100 has zero import statements; README.md:230 'Zustand core can be imported and used without the React dependency'; separate build entry rollup.config.mjs:14 / package.json:67 'build:vanilla'."
+    },
+    {
+      "claim": "The React bindings and the equality-fn bindings both wrap createStore.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:54 'const api = createStore(createState)' then :58 'Object.assign(useBoundStore, api)'; src/traditional.ts:70 'const api = createStore(createState)' then :77 'Object.assign(useBoundStoreWithEqualityFn, api)'."
+    },
+    {
+      "claim": "shallow/useShallow do not depend on the core.",
+      "verdict": "supported",
+      "evidence": "Neither src/vanilla/shallow.ts (no imports) nor src/react/shallow.ts (:1-2, react + ../vanilla/shallow.ts) imports src/vanilla.ts or src/react.ts; rollup.config.mjs:12-13 builds them as their own entries 'zustand/vanilla/shallow' and 'zustand/react/shallow'."
+    },
+    {
+      "claim": "Middleware wraps set and patches the api; get is passed to every middleware but wrapping it is an unused extension point.",
+      "verdict": "supported",
+      "evidence": "set wrapped / api.setState patched: immer.ts:76, persist.ts:231, devtools.ts:216, ssrSafe.ts:22; api patched: subscribeWithSelector.ts:51, persist.ts:337, devtools.ts:246, redux.ts:42. get forwarded unchanged everywhere (immer.ts:84, persist.ts:241, devtools.ts:265, ssrSafe.ts:17/23, subscribeWithSelector.ts:69); redux.ts:39 names it '_get' and never uses it.",
+      "note": "Subject to the persist storage-unavailable caveat recorded above."
+    },
+    {
+      "claim": "zustand/traditional uses the use-sync-external-store shim (in addition to React).",
+      "verdict": "supported",
+      "evidence": "src/traditional.ts:1 'import React from \"react\"'; :2 'import useSyncExternalStoreExports from \"use-sync-external-store/shim/with-selector\"'; :12 and :36 useSyncExternalStoreWithSelector.",
+      "note": "src/react.ts:30 uses React.useSyncExternalStore directly, so the shim is a dependency of the traditional entry only."
+    },
+    {
+      "claim": "Immer is the external dependency of the immer middleware.",
+      "verdict": "supported",
+      "evidence": "src/middleware/immer.ts:1 'import { produce } from \"immer\"'; :2 'import type { Draft } from \"immer\"'; own build entry package.json:70 'build:middleware:immer'."
+    },
+    {
+      "claim": "persist depends on a pluggable storage backend.",
+      "verdict": "supported",
+      "evidence": "src/middleware/persist.ts:7-11 StateStorage interface (getItem/setItem/removeItem), :18-24 PersistStorage, :31-61 createJSONStorage adapter, :78 'storage?' option; default window.localStorage at :190."
+    },
+    {
+      "claim": "devtools depends on the Redux DevTools extension.",
+      "verdict": "supported",
+      "evidence": "src/middleware/devtools.ts:1 'import type {} from \"@redux-devtools/extension\"'; :200-203 window.__REDUX_DEVTOOLS_EXTENSION__; :141/149 extensionConnector.connect(options); README.md:368.",
+      "note": "@redux-devtools/extension is a devDependency only (package.json:120), not a peer dependency; at runtime the browser extension is detected via the window global."
+    },
+    {
+      "claim": "package.json lists react, @types/react, immer and use-sync-external-store as optional peer dependencies.",
+      "verdict": "supported",
+      "evidence": "package.json:159-164 peerDependencies { '@types/react': '>=18.0.0', 'immer': '>=9.0.6', 'react': '>=18.0.0', 'use-sync-external-store': '>=1.2.0' }; :165-178 peerDependenciesMeta marks all four 'optional: true'."
+    }
+  ]
+}

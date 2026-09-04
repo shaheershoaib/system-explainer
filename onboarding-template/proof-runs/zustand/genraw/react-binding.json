@@ -1,0 +1,120 @@
+{
+  "moduleId": "react-binding",
+  "items": [
+    {
+      "id": "g1",
+      "prompt": "After `const useBear = create(...)`, calling `useBear.getState()` from a plain module works. According to `src/react.ts` as shown in the module, what makes `getState` exist on the hook?",
+      "options": [
+        {
+          "text": "`createImpl` sets the hook function's prototype to the vanilla store object, so `getState` resolves through the prototype chain on lookup.",
+          "correct": false
+        },
+        {
+          "text": "`createImpl` wraps `useStore` in a Proxy whose get trap forwards any non-call property access straight to the vanilla store API.",
+          "correct": false
+        },
+        {
+          "text": "`createImpl` calls `Object.assign(useBoundStore, api)`, copying the vanilla store's methods onto the hook function itself as own properties.",
+          "correct": true
+        },
+        {
+          "text": "`createImpl` defines `getState`, `setState` and `subscribe` as closures over a `useReducer` cell that the hook allocates on first render.",
+          "correct": false
+        }
+      ],
+      "whyHard": "The README loosely says the utilities are 'attached to its prototype', so a reader who skimmed docs instead of the module's code snippet picks the prototype option; the Proxy and closure-over-useReducer options are mechanisms other libraries (and zustand's own pre-2022 hook) actually used. Only the module's `createImpl` snippet shows the plain `Object.assign`."
+    },
+    {
+      "id": "g2",
+      "prompt": "`useStore` hands exactly three functions to `React.useSyncExternalStore`. What is the THIRD one?",
+      "options": [
+        {
+          "text": "A memoized `() => selector(api.getState())`, identical to the client getter, so server and client snapshots always agree.",
+          "correct": false
+        },
+        {
+          "text": "A memoized `() => selector(api.getInitialState())`, so the server snapshot is the selector applied to the store's initial state.",
+          "correct": true
+        },
+        {
+          "text": "`api.getInitialState` passed through raw, with the selector supplied separately so React applies it after reading the snapshot.",
+          "correct": false
+        },
+        {
+          "text": "An `undefined` placeholder, because zustand leaves server snapshots to the `persist` middleware's hydration step.",
+          "correct": false
+        }
+      ],
+      "whyHard": "Everyone who knows useSyncExternalStore knows the third argument is getServerSnapshot; the module-specific fact is that zustand feeds it `selector(api.getInitialState())`, memoized. The raw-getInitialState-plus-separate-selector option is exactly the real shape of `useStoreWithEqualityFn` in `zustand/traditional`, and reusing `getState` is what most people assume."
+    },
+    {
+      "id": "g3",
+      "prompt": "The intro doc claims zustand handles the 'zombie child' problem. Per the module, what is the CURRENT zombie-child mechanism inside `src/react.ts`?",
+      "options": [
+        {
+          "text": "`useStore` snapshots the state in a ref before subscribing and, inside a layout effect, re-runs the listener whenever `getState()` no longer matches that pre-subscription ref.",
+          "correct": false
+        },
+        {
+          "text": "Store actions are wrapped in `unstable_batchedUpdates` so that parent and child updates caused by a single `set` are flushed together in one React commit.",
+          "correct": false
+        },
+        {
+          "text": "Listeners live in an insertion-ordered Set, so parents, which subscribe first, are always notified before children and can never observe stale props.",
+          "correct": false
+        },
+        {
+          "text": "None of its own: the useReducer-plus-refs re-check was deleted in #550 (April 2022) when `useStore` moved onto `useSyncExternalStore`, which re-checks after subscribing itself.",
+          "correct": true
+        }
+      ],
+      "whyHard": "The second option is a faithful description of the code that actually shipped in zustand until April 2022 (`stateBeforeSubscriptionRef` plus a layout-effect re-check), so anyone who learned zustand v3 internals picks it. `unstable_batchedUpdates` is real advice in zustand's own docs, but for calling actions outside event handlers on pre-React-18, not the hook's mechanism. Only the module states the code was removed and the guarantee now comes from React."
+    },
+    {
+      "id": "g4",
+      "prompt": "A teammate renders the count with `const bears = useBear.getState().bears` in the component body instead of `useBear((s) => s.bears)`. What actually happens at runtime?",
+      "options": [
+        {
+          "text": "It shows the right value on that render but never subscribes, so later `set` calls leave it stale until something else re-renders the component.",
+          "correct": true
+        },
+        {
+          "text": "It throws during render, because `getState` is not a hook and calling store methods in the render phase violates the rules of hooks.",
+          "correct": false
+        },
+        {
+          "text": "It subscribes to the whole store object, so the component re-renders on every `set`, not only when the `bears` field itself changes.",
+          "correct": false
+        },
+        {
+          "text": "It reads the frozen initial snapshot, so the count stays at its `create`-time value even after other state forces the component to re-render.",
+          "correct": false
+        }
+      ],
+      "whyHard": "The over-subscription option describes what `useBear()` with no selector really does, and the frozen-snapshot option is what `getInitialState` would do; both are real neighbors. The subtle correct behavior (fresh on any re-render, but never triggering one) is the module's own exercise and its hint that `getState` is non-reactive rather than wrong or frozen."
+    },
+    {
+      "id": "g5",
+      "prompt": "In v5, after `set` changes the store, what decides whether `BearCounter` (selecting `(s) => s.bears`) re-renders?",
+      "options": [
+        {
+          "text": "zustand's own listener re-runs the selector, compares it with the previous slice, and calls a `forceUpdate` reducer only when they differ.",
+          "correct": false
+        },
+        {
+          "text": "React re-renders every subscribed component, then bails out during render if a shallow comparison of the selected result matches.",
+          "correct": false
+        },
+        {
+          "text": "React re-runs the selector over the fresh state and re-renders only if `Object.is` says the selected result differs from the previous one.",
+          "correct": true
+        },
+        {
+          "text": "The store skips notifying unless `Object.is` says the whole state object changed; any component it does notify then re-renders.",
+          "correct": false
+        }
+      ],
+      "whyHard": "The listener-plus-forceUpdate option is exactly how zustand's hook worked before #550, so experienced users recall it as current. The whole-state `Object.is` check is real but lives in the vanilla `setState`, and it gates notification, not re-rendering. The module states the sequence (React re-runs the selector, compares, re-renders only if changed) and names `Object.is` as the default comparison; shallow is opt-in via `useShallow` or `createWithEqualityFn`."
+    }
+  ]
+}

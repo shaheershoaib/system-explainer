@@ -1,0 +1,51 @@
+{
+  "moduleId": "middleware-and-code",
+  "title": "Middleware, the codebase & architecture",
+  "objective": "Learn the one shape every middleware shares (wrap the state creator; wrap set and/or patch the api), tour persist/devtools/immer/redux, then map every concept to the real files and the architecture so you can navigate and extend the code.",
+  "quiz": [
+    {
+      "id": "mc-q-mwshape",
+      "type": "mcq",
+      "prompt": "What is a zustand middleware, structurally?",
+      "options": [
+        {
+          "key": "a",
+          "text": "A function that takes a state creator and returns a new state creator, wrapping set and/or patching the store api."
+        },
+        {
+          "key": "b",
+          "text": "A React component that wraps your tree and provides the store via context."
+        },
+        {
+          "key": "c",
+          "text": "A plugin registered globally that applies to all stores at once."
+        }
+      ]
+    },
+    {
+      "id": "mc-q-persistmerge",
+      "type": "mcq",
+      "prompt": "You ship v2 of your app adding `settings: { theme, density }` to a persisted store. Returning users see `density` undefined even though the new default sets it. Why?",
+      "options": [
+        {
+          "key": "a",
+          "text": "You forgot replace:true on set."
+        },
+        {
+          "key": "b",
+          "text": "persist never reads old data, so all defaults are lost."
+        },
+        {
+          "key": "c",
+          "text": "persist’s default merge is shallow — the stored `settings` object overwrites the new default `settings` wholesale, dropping `density`."
+        }
+      ]
+    },
+    {
+      "id": "mc-q-codemap",
+      "type": "short-answer",
+      "prompt": "Where is the React subscription wired, and which React API does zustand use to subscribe a component to the store?",
+      "instruction": "Answer in 1-3 sentences."
+    }
+  ]
+}

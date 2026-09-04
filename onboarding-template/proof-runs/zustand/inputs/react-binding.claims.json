@@ -1,0 +1,36 @@
+{
+  "moduleId": "react-binding",
+  "title": "The store as a React hook",
+  "objective": "See how `create` turns the vanilla store into a hook, how `useStore` bridges it to React via useSyncExternalStore, and why no Provider is needed.",
+  "citedPaths": [
+    "src/react.ts",
+    "docs/learn/getting-started/introduction.md",
+    "README.md"
+  ],
+  "claims": [
+    {
+      "id": "rb-create-b0",
+      "text": "`create` builds a vanilla store, then returns a hook. It also copies the store’s methods (`setState`, `getState`, `subscribe`, `getInitialState`) onto the hook, so `useBear` is both a hook AND a handle you can call outside React."
+    },
+    {
+      "id": "rb-create-b3",
+      "text": "[note] No `<Provider>` is needed because the store is a module-level singleton you import directly. (Contrast: Redux and Recoil wrap your app in a context provider — see the comparison doc.)"
+    },
+    {
+      "id": "rb-usestore-b0",
+      "text": "`useStore` is the bridge. It hands the store’s `subscribe` and a `getSnapshot` (your selector applied to `getState()`) to React’s `useSyncExternalStore`. React owns the subscription lifecycle; zustand just supplies the three functions."
+    },
+    {
+      "id": "rb-usestore-b2",
+      "text": "When `set` notifies React’s listener, React re-runs your selector over the fresh state, compares the result to last time, and re-renders the component only if it changed. The default comparison is `Object.is`."
+    },
+    {
+      "id": "rb-usestore-b3",
+      "text": "[warning] The introduction doc says zustand deals with the \"zombie child\", \"React concurrency\", and \"context loss\" pitfalls. Be precise about how. Context loss between mixed renderers is avoided structurally — `src/react.ts` never uses React context; the hook simply closes over its store. Zombie-child safety was hand-rolled until April 2022 (#550): zustand subscribed with useReducer + refs and re-checked state after subscribing. That code was deleted when zustand adopted `useSyncExternalStore` — React’s public API for subscribing to an external store — which now performs the subscription and the post-subscribe re-check itself; the old zombie-child regression test still passes through it. The concurrency guarantee is React’s: the repo’s docs describe the result (\"safe under React concurrency\") rather than implementing it."
+    },
+    {
+      "id": "rb-outside-b0",
+      "text": "Because the API is stapled onto the hook, you can use the store from plain modules — getState for a non-reactive read, setState to write, subscribe to react. The README shows this directly."
+    }
+  ]
+}
