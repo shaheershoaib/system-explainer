@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import clsx from 'clsx'
 import type { Architecture } from '@schema/bundle'
+import { placeEdgeBadges, type Pt } from '../../../generator/diagram-layout'
 
 const KIND_ORDER = ['frontend', 'backend', 'service', 'job', 'datastore', 'external'] as const
 const KIND_STYLE: Record<string, { box: string; label: string }> = {
@@ -35,6 +36,26 @@ function computeLayout(arch: Architecture) {
   return { nodes, width: maxW + A.margin * 2, height: rows.length * A.h + (rows.length - 1) * A.vGap + A.margin * 2 }
 }
 
+/**
+ * Connections are numbered by their position in `connections` (1-based): badge n sits on
+ * edge n and the legend under the SVG spells n out. Labels never ride the edges themselves,
+ * where a dense diagram piles them onto each other and onto other edges and nodes.
+ */
+function computeEdges(arch: Architecture, nodes: Node[]) {
+  const center = (id: string): Pt | null => {
+    const n = nodes.find((x) => x.id === id)
+    return n ? { x: n.x + A.w / 2, y: n.y + A.h / 2 } : null
+  }
+  const drawn = (arch.connections ?? []).flatMap((cn, i) => {
+    const a = center(cn.from)
+    const b = center(cn.to)
+    return a && b ? [{ n: i + 1, cn, a, b }] : []
+  })
+  const boxes = nodes.map((n) => ({ x: n.x, y: n.y, w: A.w, h: A.h }))
+  const at = placeEdgeBadges(drawn.map((d): [Pt, Pt] => [d.a, d.b]), { obstacles: boxes })
+  return drawn.map((d, i) => ({ ...d, badge: at[i] }))
+}
+
 export function ArchitectureDiagram({
   architecture,
   title,
@@ -46,10 +67,8 @@ export function ArchitectureDiagram({
   hrefFor?: (tech?: string) => string | undefined
 }) {
   const layout = useMemo(() => computeLayout(architecture), [architecture])
-  const center = (id: string) => {
-    const n = layout.nodes.find((x) => x.id === id)
-    return n ? { x: n.x + A.w / 2, y: n.y + A.h / 2 } : null
-  }
+  const edges = useMemo(() => computeEdges(architecture, layout.nodes), [architecture, layout])
+  const nameOf = (id: string) => architecture.components.find((c) => c.id === id)?.name ?? id
   return (
     <figure className="my-2">
       <svg viewBox={`0 0 ${layout.width} ${layout.height}`} role="img" aria-label={title ?? 'System architecture diagram'} className="block h-auto w-full">
@@ -59,40 +78,9 @@ export function ArchitectureDiagram({
             <path d="M0,0 L7,3 L0,6 Z" fill="var(--color-muted)" />
           </marker>
         </defs>
-        {(() => {
-          type Box = { x: number; y: number; w: number; h: number }
-          const placed: Box[] = []
-          const hit = (p: Box, q: Box) => p.x < q.x + q.w && p.x + p.w > q.x && p.y < q.y + q.h && p.y + p.h > q.y
-          return (architecture.connections ?? []).map((cn, i) => {
-            const a = center(cn.from)
-            const b = center(cn.to)
-            if (!a || !b) return null
-            const lx = (a.x + b.x) / 2
-            let ly = (a.y + b.y) / 2
-            if (cn.label) {
-              const w = cn.label.length * 6 + 8
-              let box: Box = { x: lx - w / 2, y: ly - 8, w, h: 16 }
-              let n = 0
-              while (placed.some((p) => hit(box, p)) && n < 8) {
-                ly += 18
-                box = { x: lx - w / 2, y: ly - 8, w, h: 16 }
-                n++
-              }
-              placed.push(box)
-            }
-            return (
-              <g key={i}>
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--color-line)" strokeWidth={1.5} markerEnd="url(#arch-arrow)" />
-                {cn.label && (
-                  <>
-                    <rect x={lx - (cn.label.length * 6 + 8) / 2} y={ly - 8} width={cn.label.length * 6 + 8} height={16} rx={4} fill="var(--color-surface)" opacity={0.92} />
-                    <text x={lx} y={ly + 3} textAnchor="middle" fontSize={10} fill="var(--color-muted)">{cn.label}</text>
-                  </>
-                )}
-              </g>
-            )
-          })
-        })()}
+        {edges.map(({ n, a, b }) => (
+          <line key={n} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--color-line)" strokeWidth={1.5} markerEnd="url(#arch-arrow)" />
+        ))}
         {layout.nodes.map((n) => {
           const href = hrefFor?.(n.tech)
           const inner = (
@@ -119,7 +107,30 @@ export function ArchitectureDiagram({
             </foreignObject>
           )
         })}
+        {/* numbered badges, drawn last so a node box never hides one */}
+        {edges.map(({ n, badge }) => (
+          <g key={n}>
+            <circle cx={badge.x} cy={badge.y} r={9} fill="var(--color-surface)" stroke="var(--color-line)" />
+            <text x={badge.x} y={badge.y + 3.5} textAnchor="middle" fontSize={10} fontWeight={600} fill="var(--color-ink)">
+              {n}
+            </text>
+          </g>
+        ))}
       </svg>
+
+      {edges.length > 0 && (
+        <figcaption className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-xs text-muted sm:grid-cols-2">
+          {edges.map(({ n, cn }) => (
+            <div key={n} className="flex flex-wrap items-baseline gap-1">
+              <span className="w-4 shrink-0 text-right tabular-nums">{n}.</span>
+              <span className="font-medium text-ink">{nameOf(cn.from)}</span>
+              <span className="text-accent-500">→</span>
+              <span className="font-medium text-ink">{nameOf(cn.to)}</span>
+              {cn.label && <span>· {cn.label}</span>}
+            </div>
+          ))}
+        </figcaption>
+      )}
     </figure>
   )
 }
