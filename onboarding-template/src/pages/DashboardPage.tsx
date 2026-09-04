@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { AlertTriangle, ArrowLeft, ClipboardCopy, Users } from 'lucide-react'
 import { useBundle } from '../lib/useBundle'
-import { fetchDashboard, type DashboardData } from '../lib/sync'
+import { fetchDashboard, hasApi, type DashboardData } from '../lib/sync'
 
 function relTime(ms?: number): string {
   if (!ms) return '—'
@@ -55,7 +55,12 @@ export function DashboardPage() {
       <h1 className="mt-3 text-2xl font-bold tracking-tight text-ink">Onboarding dashboard</h1>
       <p className="text-sm text-muted">{bundle.system.name}</p>
 
-      {!data && (
+      {!hasApi && (
+        <p className="mt-6 text-sm text-muted">
+          No dashboard API is configured for this deployment (set VITE_API_URL at build time).
+        </p>
+      )}
+      {!data && hasApi && (
         <form onSubmit={load} className="mt-6 flex max-w-sm gap-2">
           <input
             type="password"

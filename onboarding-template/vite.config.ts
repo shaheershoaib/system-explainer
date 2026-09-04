@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite'
 // React + Tailwind v4 via the Vite plugin,
 // `@` aliased to src. `@schema` exposes the shared bundle contract to the app.
 export default defineConfig({
+  // Sub-path deployments (e.g. a GitHub Pages project site) set VITE_BASE=/<repo>/ at build time.
+  base: process.env.VITE_BASE || '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
