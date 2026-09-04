@@ -23,11 +23,11 @@ The teacher will dispatch you with a prompt naming:
 - The **domain** they're about to teach (e.g., "Ledger Balance," "Payouts," "Batch Reconciliation")
 - The **specific files** they expect to be relevant (file paths, directories, or search patterns)
 - The **behaviors / options / statuses / flows** they are uncertain about
-- A pointer to the **context index** at `~/.claude/skills/system-explainer/references/<system>/context-index.md` if one exists for this system
+- The absolute path of the system's **knowledge base directory** (its `context-index.md` is the context index), if one exists for this system
 
 ## Context-index awareness (do this first)
 
-**Before reading the domain source files, check whether a context index exists for this system.** The path will be `~/.claude/skills/system-explainer/references/<system>/context-index.md` where `<system>` matches the project being taught.
+**Before reading the domain source files, check whether a context index exists for this system.** It is the `context-index.md` inside the knowledge base directory the teacher named in the dispatch (if the teacher named none, there is no index; proceed with the source files).
 
 If a context index exists:
 1. Read it — quickly, structurally. You're looking for what's already known and what other context sources exist.

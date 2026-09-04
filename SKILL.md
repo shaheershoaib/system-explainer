@@ -25,17 +25,30 @@ If the user can't say what the system *does* in one sentence using terms that ex
 
 Do **not** use this skill for: simple lookups, debugging a specific failure, or tasks where the user already understands the system and just wants something done.
 
+## Where things live (read once per session)
+
+Two placeholders appear throughout this skill. Resolve both before Phase 0 and use the resolved absolute paths in every subagent dispatch.
+
+- **`${CLAUDE_SKILL_DIR}`** is the directory containing this `SKILL.md`. Claude Code substitutes it automatically; on any other runtime, resolve it yourself from where the skill was installed. Sibling files: `${CLAUDE_SKILL_DIR}/subagents/` (the three teaching prompts), `${CLAUDE_SKILL_DIR}/references/course-generation.md` (the full Phase 4 procedure), `${CLAUDE_SKILL_DIR}/onboarding-template/` (the course engine), `${CLAUDE_SKILL_DIR}/mcp/teaching-knowledge-base/` (the knowledge-base MCP server), `${CLAUDE_SKILL_DIR}/hooks/` (the compaction-marker hook). Never assume the skill lives under `~/.claude/skills/`; a plugin install lives in a cache directory that is replaced on update.
+- **`<kb-root>`** is where knowledge bases live. Knowledge bases must sit OUTSIDE the skill directory (a plugin update would remove them). Resolve in this order and tell the user which one is in use:
+  1. `$SYSTEM_EXPLAINER_HOME/references` when that environment variable is set.
+  2. `<git root of the current working directory>/.system-explainer/references` when that directory already exists (a project-local knowledge base, committed with the repo and shared with the team; create the directory first if the user wants this).
+  3. `~/.system-explainer/references` otherwise (the default for a cold start).
+  **Legacy location:** knowledge bases created by versions before 3.0 live at `~/.claude/skills/system-explainer/references/<system>/`. If a system exists there and not under `<kb-root>`, keep reading and writing it there; never move it silently. The `teaching-knowledge-base` MCP resolves the same order (its `list_systems` tool reports `references_base` and `legacy_base`); if they disagree with what you resolved, use the MCP's answer and say so.
+
+A system's knowledge base is `<kb-root>/<system-name>/`.
+
 ## Phase 0 — Configuration
 
 The skill cannot teach what it does not have context for. Before any explanation work, **establish what context exists** for the system being taught and persist it to disk. This is the deliberate setup step — every subsequent phase reads from the artifacts created here.
 
 ### 0.1 — Identify the system and check for an existing knowledge base
 
-Ask the user what system this is and check whether a knowledge base already exists at `~/.claude/skills/system-explainer/references/<system-name>/`.
+Ask the user what system this is and check whether a knowledge base already exists at `<kb-root>/<system-name>/` (or at the legacy location named in *Where things live*).
 
 **If a knowledge base exists, this is a re-engagement, not a cold start.** Do the following:
 
-1. **Check for a compaction marker first.** Look at the system's `compaction-markers.md` file (at `~/.claude/skills/system-explainer/references/<system>/compaction-markers.md`). If it exists and contains any `## Compaction marker — ...` entry from within the last 24 hours, assume context may have been auto-compacted recently. If detected:
+1. **Check for a compaction marker first.** Look at the system's `compaction-markers.md` file (at `<kb-root>/<system>/compaction-markers.md`). If it exists and contains any `## Compaction marker — ...` entry from within the last 24 hours, assume context may have been auto-compacted recently. If detected:
    - Treat this re-engagement as *stronger* — re-read everything below in full, not skimmed
    - When confirming with the user (step 5 below), explicitly flag: *"I see a compaction marker from [time]. Recent context may have been lost. Let me re-read everything before responding."*
    - Do not respond to substantive questions about the system from compacted memory alone — re-grounding from disk is mandatory before any teaching content
@@ -45,9 +58,9 @@ Ask the user what system this is and check whether a knowledge base already exis
 5. **Synthesize and confirm with the user before proceeding.** Open with: *"Re-engaging with [system]. Last touched [date from learning log]. Domains locked so far: [list]. Outstanding queue: [list]. Want to pick up from [next outstanding item], or pivot elsewhere?"*
 6. **Only after the user confirms direction**, continue. If the user is starting a new domain, Phase 2's Step 0 (pre-flight grounding subagent) is still mandatory — the learning log tells you *what* has been taught, not *what the current source code looks like*.
 
-**The compaction marker system explained:** A PreCompact hook at `~/.claude/hooks/pre-compact-teaching-snapshot.sh` fires before Claude Code auto-compacts conversation context. It appends a timestamped marker to the `compaction-markers.md` file of each recently-active system (separate file from `learning-log.md` to eliminate any contention with the MCP's `lock_domain` tool). This is the only mechanism that signals in-session auto-compaction — neither CLAUDE.md nor SessionStart hooks fire mid-session. Treat compaction markers as authoritative evidence that re-reading is required, the same way Phase 2 Step 0's subagent report is authoritative for source grounding.
+**The compaction marker system explained:** A PreCompact hook (`${CLAUDE_SKILL_DIR}/hooks/pre-compact-teaching-snapshot.sh`, registered automatically when this skill is installed as a Claude Code plugin) fires before Claude Code auto-compacts conversation context. It appends a timestamped marker to the `compaction-markers.md` file of each recently-active system (separate file from `learning-log.md` to eliminate any contention with the MCP's `lock_domain` tool). This is the only mechanism that signals in-session auto-compaction — neither CLAUDE.md nor SessionStart hooks fire mid-session. Treat compaction markers as authoritative evidence that re-reading is required, the same way Phase 2 Step 0's subagent report is authoritative for source grounding.
 
-The hook is an **enhancement layer**, not the durability foundation. If the hook ever fails silently (permissions, disk full, etc.), the rest of Phase 0.1 (re-read learning log, context index, reference files in full) still catches you up — the marker just makes the catch-up *more deliberate*. Hook failures get logged to `~/.claude/hooks/pre-compact-failures.log` for verification.
+The hook is an **enhancement layer**, not the durability foundation. If the hook ever fails silently (permissions, disk full, etc.), the rest of Phase 0.1 (re-read learning log, context index, reference files in full) still catches you up — the marker just makes the catch-up *more deliberate*. Hook failures get logged to `~/.system-explainer/logs/pre-compact-failures.log` for verification.
 
 **If no knowledge base exists, this is a cold start.** Proceed to 0.2.
 
@@ -82,7 +95,7 @@ The user can answer "none" or "skip" for any category. The goal isn't to force e
 
 Once configuration is gathered:
 
-1. Create `~/.claude/skills/system-explainer/references/<system-name>/` if it doesn't exist
+1. Create `<kb-root>/<system-name>/` if it doesn't exist
 2. Create the `context/` subfolder for content that lives inside the knowledge base (meeting transcripts, vendor docs once handed over, domain references). Include a brief `context/README.md` explaining what goes there.
 3. Write `context-index.md` at the knowledge base root with the structure:
 
@@ -192,7 +205,7 @@ Do not pull in domain context preemptively. Wait until you hit a moment where th
 
 ### 1.8 — Write the knowledge base
 
-Persist what you've learned to disk under `references/<system-name>/` so future sessions don't re-learn from scratch. Recommended files:
+Persist what you've learned to disk under `<kb-root>/<system-name>/` so future sessions don't re-learn from scratch. Recommended files:
 
 - **`context-index.md`** — the catalog of every relevant context source for this system (created in Phase 0). The first stop for any agent or future session needing to know what context exists. Maintain alongside teaching — append entries when new context surfaces.
 - `one-job.md` — the single sentence, plus any secondary jobs explicitly set aside
@@ -224,9 +237,11 @@ Tools exposed:
 - **`add_context_entry`** — adds an entry to `context-index.md` under a canonical section. Required: system, section (matched against the allowlist of canonical Phase 0.3 sections; rejected if ambiguous), entry_path, description. Optional: status.
 - **`mark_stale`** — marks a `context-index.md` entry as stale (do NOT use this on gotchas.md or learning-log.md — those are append-only by design).
 - **`record_compaction_marker`** — manually record a compaction marker (complements the PreCompact hook). Writes to `compaction-markers.md`, not learning-log.md.
-- **`list_systems`** — list systems with knowledge bases under `references/`.
+- **`list_systems`** — list systems with knowledge bases under `<kb-root>` (and under the legacy location), and report both paths.
 
 **If a write fails validation** (invalid category, missing required field, ambiguous section), correct the inputs and retry — do NOT fall back to direct Write/Edit on the files. The MCP exists *because* the validation catches errors that freeform writes wouldn't.
+
+The server ships with this skill at `${CLAUDE_SKILL_DIR}/mcp/teaching-knowledge-base/` (zero dependencies) and is registered automatically by a plugin install; its README has the one-line manual registration command.
 
 **MCP-unavailable fallback.** If the `teaching-knowledge-base` MCP isn't registered or returns "tool not found" errors (fresh machine, remote session, different user), then — and only then — use Write/Edit on the markdown files directly. To stay close to the schema: read an existing entry in the relevant file first, copy its exact structure (heading format, field order, bullet style), and follow it precisely. The MCP is a discipline tool, not a hard dependency; the markdown files remain the source of truth either way.
 
@@ -273,7 +288,7 @@ Before producing any teaching content for a new domain, dispatch a **grounding s
    - The specific behaviors, options, statuses, or flows you are uncertain about
 
 2. **Dispatch the grounding extractor — the spine's CHANNEL picks the mechanism, never whether grounding happens.**
-   - **File spine** (codebase, on-disk docs, schema files): an `Explore` agent whose prompt is the full content of `~/.claude/skills/system-explainer/subagents/teaching-grounding-extractor.md`. (Explore cannot Edit/Write, preserving the read-only guarantee the prompt file's `tools:` line declares.)
+   - **File spine** (codebase, on-disk docs, schema files): an `Explore` agent whose prompt is the full content of `${CLAUDE_SKILL_DIR}/subagents/teaching-grounding-extractor.md`. (Explore cannot Edit/Write, preserving the read-only guarantee the prompt file's `tools:` line declares.)
    - **Live spine** (a running app, a workflow canvas, an admin console — observed through browser tools or a platform MCP/API): `Explore` cannot drive those channels, so either the **teacher grounds inline** with the browser/MCP tools, or dispatch a `general-purpose` agent with tool access — in both cases following the SAME prompt file's rules (verbatim capture, no inference, structured output), with "read the files" replaced by "open every relevant surface through the channel." The non-negotiable: **labels are copied, not recalled** — every workflow title, node label, field name, and status string is captured exactly as displayed, into the names ledger.
    - **No channel reaches the spine** (no repo, no access, tool not connected): grounding is **BLOCKED, not deferred**. Say so explicitly in chat, teach only with every claim marked as *hypothesis* (provenance `inferred`/`specified`), and treat the first moment of access as a mandatory re-grounding event. "We'll ground later" silently becomes "we never grounded" — the n8n failure mode this rule exists to prevent.
 
@@ -281,7 +296,7 @@ Before producing any teaching content for a new domain, dispatch a **grounding s
    - The domain name
    - The source files/paths **or live surfaces** to observe (the spine for this domain)
    - The specific behaviors you're uncertain about
-   - **A pointer to the context index** at `~/.claude/skills/system-explainer/references/<system>/context-index.md` (if it exists)
+   - **The absolute path of the knowledge base directory**, `<kb-root>/<system>/` (its `context-index.md` is the context index), if it exists
    - **Explicit pointers to prior locked knowledge** so the agent can flag contradictions: `entities.md` (if entities for this domain are already locked), `gotchas.md` (open questions and prior corrections), and `learning-log.md` (teaching history). Even if you don't expect contradictions, passing these unlocks the agent's "Contradictions with Prior Knowledge Base" output section, which is where high-value cross-references live.
 
    The agent consults the context index, reads the prior knowledge files, observes the spine, and returns the structured grounded summary including any contradiction flags.
@@ -352,7 +367,7 @@ Before declaring a domain locked and moving on, dispatch a fact-check subagent t
 
    **Learner-from-zero edge case:** if you were operating under the Phase 1.9 exception (user is genuinely new to the domain and the spine was a working hypothesis), some "claims" you made may have been speculative framings rather than confident assertions. Mark these explicitly in the list as `[hypothesis]` so the fact-checker can distinguish "the teacher said X with confidence and was wrong" from "the teacher hypothesized X and the source code agrees/disagrees." Both are valuable signals, but they require different responses — confident-wrong = correction + apology + gotcha; hypothesis-wrong = sharpening + model update.
 
-2. **Dispatch the fact checker: an `Explore` agent whose prompt is the full content of `~/.claude/skills/system-explainer/subagents/teaching-fact-checker.md`** (Explore cannot Edit/Write — the read-only guarantee). Append the numbered list of claims, the relevant code paths, any context about which claims you're most uncertain about, and a pointer to `~/.claude/skills/system-explainer/references/<system>/context-index.md` if it exists. The prompt file encodes the ✓/✗/⚠/? verdict format, the strictness rules, the evidence-quoting requirement, and consultation of the context index for cross-references against prior knowledge base entries.
+2. **Dispatch the fact checker: an `Explore` agent whose prompt is the full content of `${CLAUDE_SKILL_DIR}/subagents/teaching-fact-checker.md`** (Explore cannot Edit/Write — the read-only guarantee). Append the numbered list of claims, the relevant code paths, any context about which claims you're most uncertain about, and the absolute path of the knowledge base directory (`<kb-root>/<system>/`) if it exists. The prompt file encodes the ✓/✗/⚠/? verdict format, the strictness rules, the evidence-quoting requirement, and consultation of the context index for cross-references against prior knowledge base entries.
 
    Fallback: if the prompt file is missing, dispatch `general-purpose` and reproduce the verdict-format requirements inline.
 
@@ -366,7 +381,7 @@ At the end of each domain, dispatch a subagent specifically to identify non-obvi
 
 **Procedure:**
 
-1. **Dispatch the gotcha finder: an `Explore` agent whose prompt is the full content of `~/.claude/skills/system-explainer/subagents/teaching-gotcha-finder.md`** (Explore cannot Edit/Write, preserving the no-Write rule — findings are returned, never self-appended). Append the domain just taught, the code paths to scan, optionally a brief note on what the teaching already covered (so it doesn't re-surface known material), and a pointer to `~/.claude/skills/system-explainer/references/<system>/context-index.md` if it exists. The prompt file encodes the gotcha categories, the output structure, the cap on findings (5–10), and the rule that it must first read existing `gotchas.md` to avoid duplicating known findings.
+1. **Dispatch the gotcha finder: an `Explore` agent whose prompt is the full content of `${CLAUDE_SKILL_DIR}/subagents/teaching-gotcha-finder.md`** (Explore cannot Edit/Write, preserving the no-Write rule — findings are returned, never self-appended). Append the domain just taught, the code paths to scan, optionally a brief note on what the teaching already covered (so it doesn't re-surface known material), and the absolute path of the knowledge base directory (`<kb-root>/<system>/`) if it exists. The prompt file encodes the gotcha categories, the output structure, the cap on findings (5–10), and the rule that it must first read existing `gotchas.md` to avoid duplicating known findings.
 
    Fallback: if the prompt file is missing, dispatch `general-purpose` and reproduce the structured findings format inline.
 
@@ -412,121 +427,11 @@ For each task:
 
 ## Phase 4 — Onboarding App Generation (opt-in)
 
-Phase 2 teaches a system *conversationally*. Phase 4 projects everything the knowledge base has accumulated into a **standalone, interactive onboarding web app** a brand-new developer can work through solo — concept-first lessons, diagrams derived from the data, and quizzes built from the misconception bank — plus a lead-facing dashboard. The teaching skill and the app are two consumers of **one** source of truth (the knowledge base).
+Phase 2 teaches a system *conversationally*. Phase 4 projects the knowledge base into a **standalone, interactive onboarding course** a brand-new developer can work through solo (concept-first lessons, diagrams derived from the data, quizzes built from the misconception bank, branching simulations, annotated real screens, a lead dashboard) and then **proves** it: every snippet grounded against source, every claim adversarially checked, teaching measured against a cold control. Two paths produce the same validated bundle: **Path A** (hand-authored from a knowledge base; the quality ceiling) and **Path B** (an autonomous loop on a cold repo with no knowledge base; one command).
 
-**When to use:** the user asks to "build / generate an onboarding app / course / module for `<system>`", or wants a sharable 0→100 onboarding artifact. **Path A** (hand-authored) requires a knowledge base under `references/<system>/` — run Phases 0–2 first; the richer the `learning-log.md` and `gotchas.md`, the better the course (the *corrections* recorded during teaching are the quiz gold). **Path B** (autonomous loop) requires only a repo — no knowledge base, no prior teaching.
+**When to use:** the user asks to "build / generate an onboarding course / app for `<system>`", "course this repo", or "verify / prove the course".
 
-**Architecture (Approach A — one engine, data per system):** a reusable template engine lives at `~/.claude/skills/system-explainer/onboarding-template/`. Generation does **not** write app code — it emits a validated **content bundle** (data) that the engine renders. "One app per system" = deploy the engine seeded with that system's bundle. Contract: `onboarding-template/schema/bundle.ts` (zod is the source of truth; TS types are inferred). Full design: `onboarding-template/docs/specs/2026-06-16-onboarding-app-generator-design.md`.
-
-### Generation paths — hand-authored (A) vs autonomous loop (B)
-
-Two ways to produce the bundle; both end at the same validated, grounded artifact the engine renders.
-
-- **Path A — hand-authored (richest; the quality ceiling).** Author `generator/authored/<system>.ts` per the procedure below. Use when a `references/<system>/` KB exists or you want the full enrichment (ER diagrams, **simulations**, **annotated screens**, curated misconceptions). This is the comprehensive/L3 path the rest of this section details.
-- **Path B — autonomous loop (one command, cold repo, no KB).** Two artifacts in `onboarding-template/`:
-  - `generator/auto-course.workflow.js` — the orchestrated loop, run with the **Workflow tool**. It **courses the repo you're in (the current working directory) by default** — the natural `npx`-style behavior; you only pass `args.repoPath` to course a repo that *isn't* the cwd. `Workflow({ scriptPath: "<template>/generator/auto-course.workflow.js", args: { systemName, srcHint, repoUrl, audience, workDir, graphPath } })` (`audience: 'non-technical'` authors plain-English analogy-first modules with NO code snippets — the same knob as Path A). Pipeline: **enumerate domains → extract the data model (ER) → (per domain) author a module + VERIFY every snippet against real source, self-healing drift → completeness critic → loop until comprehensive.** Each agent is scoped to the target repo and forbidden from wandering outside it.
-    - **Disk-bus intermediates.** Every agent writes its full artifact to `workDir` (default `.system-explainer/auto-course/<system>/`): `plan.json`, `datamodel.json`, `drafts/<id>.json`, and the verified `modules/<id>.json`. Only small summaries flow through the workflow, so the loop's return value is tiny — no multi-hundred-KB JSON through the orchestrator's context, and no hand-relayed artifacts.
-    - **Deterministic structural backbone (graphify).** If an AST graph exists for the repo (`<repo>/graphify-out/graph.json`, or `args.graphPath`), the enumerate/data-model/completeness agents read it FIRST as the authoritative inventory of what exists and what connects — structure from the parser, meaning from the LLM, truth from the grounding gate + proof. Generate one with `graphify <repo>` when available; the loop degrades gracefully without it.
-  - `generator/assemble-bundle.ts` (`npm run assemble -- --dir <workDir> --system <id> --repo <repoPath> [--out <workspace-dir>]`; legacy `--in <combined.json>` still accepted) — the deterministic back half: read the work directory (module order follows `plan.json`; a corrupt module file fails LOUDLY, never silently shrinks the course), map → bundle, build the **ER diagram** from the extracted data model, re-run the REAL grounding gate (token coverage **+ line-exact verbatim**), validate, write.
-
-  **One instruction, three steps (the orchestrator's job, not the user's).** When the user says "course this repo", the orchestrating agent runs the whole pipeline itself: launch the loop → `npm run assemble -- --dir <workDir> …` → run the proof workflow. The disk-bus removed the old save-the-returned-JSON step; never ask the user to relay artifacts between steps.
-
-  **No-Workflow fallback (other agent platforms).** The loop's orchestration needs Claude Code's Workflow tool, but nothing else does: on a platform without it, run the same pipeline sequentially — dispatch one agent per phase following `auto-course.workflow.js`'s prompts verbatim (enumerate → data model → per-domain author then verify → critic), each writing to the same `workDir` contract — then `assemble --dir` and the proof CLIs work unchanged. Slower, same artifacts.
-
-  **Workspace output (`--out`) — where the user's course lives.** Both `generate` and `assemble` accept `--out <dir>` and write the canonical `bundle.json` (+ assets) there — typically a directory in the USER'S project. The engine-local `bundles/<id>/` + `public/` copies are serving caches; treat the engine install as replaceable (plugin-safe) and the `--out` copy as the artifact the user owns and versions.
-  
-  Path B currently emits prose / real code / callouts / quizzes + a data-model ER; **simulations and annotated screens remain Path-A enrichment** (the loop's next frontier). Proven cold on a ~50-page React/TS app: 15 modules, 60 quizzes, **214/214 grounded, 208 exact-verbatim** — the verify step self-heals snippets to byte-faithful copies (often *more* exact than hand-authoring, which trims for teaching).
-
-**Grounding gate (both paths).** `generator/verify-grounding.ts` checks every `code` block's `sourcePath` against the real repo: token coverage catches drift/hallucination, and `exactMatch` additionally flags snippets that are contiguous byte-faithful copies (reported as the `exact` count; a block that *claims* `excerpt:'verbatim'` but isn't an exact copy is capped at `partial`). Exact matches also get their **`lineRange` stamped**, so the rendered snippet's source link deep-links to the exact `#L<start>-L<end>` at the verified commit. The gate additionally stamps **`provenance.sourceLicense`** (first line of the repo's LICENSE) — embedded verbatim snippets must carry the upstream notice, and the app shows the attribution under the pitch. The home badge shows "N/N verified · M exact". Pass `--repo <path>` to `generate`/`assemble` to run it.
-
-### Proof report — the verification gate (faithful · true · effective)
-
-Grounding proves the *snippets* are real. It does **not** prove the *prose* is true, nor that the course actually teaches. Every generated course (Path A **and** Path B) should ship a **proof report** before it is shared — it is the product's defensible moat ("the only repo course that checks itself"), and on its first real run it caught **5 false claims in a flagship hand-authored course that grounding had passed 36/36** (a "relationship X is not direct" gotcha the schema contradicts; a formula missing its per-$100 divisor; two quiz keys that keyed the *wrong* answer). Three layers:
-
-- **Faithful** — snippet = source (the grounding record above).
-- **True** — one **adversarial skeptic per module** re-reads each prose/callout claim and tries to **refute** it against the repo, defaulting to disbelief; survivors are `supported`, the rest `refuted`/`unverifiable` with file:line evidence. Refuted claims are real bugs — fix the authored source and re-run.
-- **Effective** — a **generated 4-option comprehension quiz with grounded distractors** (real-but-wrong neighbors, so they cannot be guessed), answered by a capable learner **taught** (read the module) vs **cold** (title + objective only). `taught − cold = lift` isolates teaching, and the report shows **per-item discrimination** (taught-right & cold-wrong is the direct evidence of teaching; both-right items are guessable and carry no signal). **Truth gates effectiveness**: a quiz key that encodes a refuted claim rewards a learner for absorbing the error, so Layer 2 must pass first. (On the flagship run the course's own 2-option quiz was non-discriminating at cold 86%; the hardened quiz moved it to taught 96% / cold 76%, +20 lift.)
-
-Run it with the **Workflow tool** after a bundle exists:
-```
-Workflow({ scriptPath: "<template>/generator/proof.workflow.js",
-           args: { templateDir: "<abs template>", system: "<id>",
-                   bundlePath: "bundles/<id>/bundle.json",
-                   repoPath: "<abs ground-truth repo>",   // omit -> the cwd repo
-                   modules: ["m1","m2"] } })              // omit -> ALL modules
-```
-It writes `proof-runs/<id>/PROOF_REPORT.md`. The deterministic halves are reusable standalone: `npx tsx generator/proof.ts prep|genprep|report --system <id> --bundle <bundle.json>` (strip/shuffle quizzes, build the hardened quiz, score + tally + render); the workflow only fans out the three agent passes.
-
-**Measurement integrity (built into the harness — trust the loud failures):**
-- `prep` writes a **run manifest** and **invalidates** every downstream agent artifact for the modules it re-preps; `report` reads only manifest modules, so stale files from earlier differently-scoped runs are inert.
-- A learner answer file that doesn't cover every question (missing or mis-keyed ids) is an **invalid run**, excluded from every aggregate and flagged in the report — never silently scored as wrong (that exact silent-zero happened once; the guard exists because of it).
-- `genprep` **rejects** generated items with duplicate option texts and re-prepping a quiz invalidates prior answers to the old one.
-
-**Honest caveats baked into the report:** the learner is an LLM with priors (the cold control is what makes the number mean anything); on a **well-known public repo even the cold control has priors**, so lift understates teaching there — it fires a caveat and you should weigh the faithful/true layers + per-item discrimination instead (lift shines on private/internal repos, the real use case); the author/skeptic/learner **share a model family** (shared blind spots survive — run the adversarial pass cross-model for high-stakes courses); and quizgen quality varies per module (some generated questions stay guessable — disclosed, not hidden).
-
-### Procedure
-
-**Step 0 — Choose the AUDIENCE and the DEPTH tier (ASK the user; both project-agnostic).** Two orthogonal knobs decide *who* the course is for and *how deep* it goes. Ask both up front; record them in `system.audience` and `system.depth` (each shown as a badge).
-
-**Audience** — sets the register and which layers even exist:
-
-| Audience | Who | How it reads |
-|---|---|---|
-| **developer** (default) | new engineers, contributors | full rigor — real code, architecture, code-map, contributor exercises, precise terminology |
-| **non-technical** | PMs, designers, "vibe coders", stakeholders | plain-English + analogies; concept + behavior + light quizzes; **no** code / architecture / code-map / contributor-exercise layers |
-
-Persona is an **authoring-time** decision (the non-technical course needs *different prose written*, not the same prose hidden) → **one bundle per (system × audience)**: `authored/<system>.ts` (developer) and a separate `authored/<system>-plain.ts` (non-technical), each with its own `system.id`. Author a non-technical course in plain language with analogies and omit the code layers entirely; the engine also defensively hides developer-only blocks (`code-map`, architecture diagrams, find-in-code/where-change/first-task exercises) for a `non-technical` audience.
-
-**Depth** — bounds how many layers get authored (most relevant for the developer audience):
-
-| Tier | Goal | Layers authored |
-|---|---|---|
-| **L1 · Orientation** | "Get the map" fast | one-job, actors/context, entities/ER, top gotchas, light quiz |
-| **L2 · Working knowledge** (default) | "Understand the domain + see it in the app" | L1 for every domain + simulations + annotated screens + decisions (the "why") + full misconception quizzes + dashboard |
-| **L3 · Contributor depth** | "Could ship a change" | L2 + the code/architecture layer + hands-on exercises + richer sourcing + a cross-domain capstone |
-
-Record the tier in `system.depth`. A learner can be pointed at a deeper domain later; the tier just bounds what gets authored, which keeps depth efficient (don't over-author L1, don't under-serve L3). A `non-technical` course is typically L1–L2 (contributor depth is inherently developer-facing).
-
-**Comprehensiveness bar — no "outstanding" domains (especially for a shared / GitHub-bound course).** At L3, "comprehensive" means **cover every domain the knowledge base names** — *including the ones `learning-log.md` lists as outstanding / not-yet-covered.* A thin slice (a handful of shallow modules) reads as broken and earns no adoption. If the KB names a domain you have not grounded, **ground it and author it before calling the course done** — fan out parallel grounding subagents over the real repo (one per domain cluster), each returning verbatim snippets + misconceptions, then author a deep module per domain. Lean comprehensive by default and let the depth tier trim *down*; never ship a stub. (A ~14-feature billing system lands at ~15 deep modules — one per real domain — not 4.)
-
-1. **Read the knowledge base** for `<system>` (one-job, actors, entities, verbs, gotchas, learning-log, context-index) plus any linked context the index points to.
-2. **Author the bundle** at `onboarding-template/generator/authored/<system>.ts` as `export default { ... } satisfies OnboardingBundle`. Mapping:
-   - `one-job.md` → `system.oneLiner` / `elevatorPitch` / `outOfScope`
-   - `actors.md` (+ relationships) → `actors[]` (drives the **context diagram**)
-   - `entities.md` (fields + **cardinality**) → `entities[]` (drives the **ER diagram**)
-   - `verbs.md` / flows → `verbs[]` / `flows[]` (flow diagrams)
-   - `learning-log.md` domains → `modules[]` (one per domain; set `order` + `prerequisites` for unlocking)
-   - **misconception bank** — the learning-log "corrections during teaching" + `entities.md` "where confusion lands" → MCQ distractors with `ifChosen` corrections + `misconception {id, trap, correction}`. **This is the highest-value content — mine it thoroughly.** Each `misconception.id` must be unique (the dashboard aggregates on it, and it's the unit of spaced-review mastery).
-   - **Quiz variety** — beyond `mcq` / `ordering` / `short-answer`, use **`spot-bug`** for code comprehension: show a buggy snippet (`lines[]` + `buggyLine`), the learner clicks the offending line, with an `explanation` + `fix`. Give MCQ and spot-bug items a `misconception` so they feed both the dashboard stuck-points and per-learner **spaced review**.
-   - **Glossary** — add a `glossary[]` of short terms (e.g. `set`, `selector`, `useShallow`). Any backticked term in prose that matches a glossary term or entity name auto-renders an inline hover **tooltip** — zero extra wiring, so lean on backticks for key terms.
-   - `gotchas.md` → `callout` blocks (carry `smeQuestion` where relevant — these become the human review-pass checklist, see Step 3)
-   - Lessons are **concept-first**: prose → mental-model → predict-reveal → diagram → worked-example → callout. Quote prototype code verbatim in `code` blocks.
-   - **Simulations** — reason from the **behavior layer** (`verbs[]`, `flows[]`, status fields, and quantity fields like charge categories) into a `Simulation`: a guided walkthrough with a live **ledger**. Real branch points become `decision`s (rail choice, cleared-vs-returned); real quantities become ledger `variables` mutated by declarative `set`/`add` effects (no code eval). Embed via a `simulation` block (referenced by id, like `flows`). **Author branches so the ledger stays correct on every path** (fold path-specific math into the option's effects). A good sim makes the system's core equation move as real numbers — e.g. a billing course's "follow one invoice" walkthrough showing "operator revenue = collected in − remitted out" recompute at every branch.
-   - **Annotated screens** *(EXPECTED whenever an app or prototype exists — a comprehensive/shared course needs the "reality" layer, it is not optional)*. If real captures already exist for the system (e.g. a prior course's `authored/<other-system>/assets/screens/*.png`), **reuse them**: copy the assets into `authored/<system>/assets/screens/`, add a top-level `screens[]`, and re-link every callout's `entity`/`module` to THIS bundle's ids. Then embed `screen` blocks in the modules whose concepts each screen grounds. **REASON first, then capture — and curate; this is what keeps it efficient on a large app:**
-     1. **Which pages? (the reasoning step — project-agnostic, never a hardcoded list.)** For each module/domain, pick the **1–2 prototype pages that best ground its `entitiesIntroduced`/verbs**, by cross-referencing the knowledge base (`context-index.md` / navigation + the prototype's actual routes) against each domain. **Capture key pages per domain, NOT every page** — the work is bounded by *domain count* (small), not *page count* (large), so a 47-page app still needs only ~one screen per taught domain. This curation is the whole efficiency story.
-     2. **Where does each go?** Embed each screen in the module whose concepts it grounds, and anchor each callout to the specific `entity`/`verb`/`module` it shows — that is the concept↔reality bridge (a region links to its entity in the ER diagram).
-     3. **Capture:** run the prototype; for each chosen page navigate to its `route`, screenshot to `generator/authored/<system>/assets/screens/<id>.png`, and resolve each callout's box from a **DOM selector** (browser tools — precise + re-capturable, not hand-placed). Record `route` + per-annotation `selector` + a `prototypeRef` so **re-capture is one step and drifted selectors are flagged** (staleness). Embed via a `screen` block; the CLI copies assets into the served app.
-     If a domain has **no prototype page** (e.g. a design-recommendation domain that exists only as a spec), it correctly gets **no screen** — don't invent one. (Fast first pass: reuse an existing real screenshot with estimated boxes; selector-anchored live capture is the durable path.)
-   - **Code / architecture** *(L3)* — reason from the **repo**: a system `architecture` (components + connections), a `code-map` block (each entity/verb → the real files implementing it, found by cross-referencing the KB against the codebase — **graphify-accelerated** when a code graph exists), and annotated real `code` from canonical files. Group it in a **Codebase & Architecture** module. This is the concept→code bridge — the gap between "understands the domain" and "could change it." Set `system.repoUrl` so every `code-map` path and architecture node clicks through to the real source **at the verified commit**, and give each `code` block a `sourcePath` (+ `excerpt: 'verbatim' | 'adapted'`) so the grounding gate (Step 3) can check it.
-   - **Decisions** *(L2+)* — project the learning-log's design *decisions* + *corrections* and gotchas' *open questions* as `decisions` blocks per domain (status: locked / recommendation / open-question). The "why," not just the "what."
-   - **Sources** *(L2+)* — per domain, the user stories / docs / SME items it rests on, as a `sources` block. Pulls from everything Phase 0 gathered, not just the conceptual KB.
-   - **Exercises** *(L3)* — hands-on `exercise` blocks (find-in-code / where-change / first-task) referencing real files. Doing beats reading.
-   - **Capstone** *(L3)* — a final `capstone` module (prerequisite: all others) whose quiz mixes domains, proving end-to-end reasoning.
-3. **Generate → verify grounding → validate:** `npm --prefix onboarding-template run generate -- --system <system> --kb references/<system> [--repo <path-to-real-repo>] [--out <workspace-dir>] [--reviewed-by "<name>"]`.
-   - **Grounding gate (the trust moat).** With `--repo`, every `code` block's distinctive identifiers are checked against its cited `sourcePath` in the real repo. Each block is stamped `verified` / `partial` / `drifted` / `missing-file`, summarized in `provenance.grounding` (→ the "N/N verified against repo@sha" home badge). Token coverage (not byte-match) tolerates faithful simplification yet still catches **drift** when the repo moves past the course. Drift is reported, never silently passed — re-author drifted snippets.
-   - **Review pass (AI drafts, human refines).** The CLI collects every `smeQuestion` + open-question `decisions` item into `provenance.review.openQuestions` (the SME checklist — per LACY, expert-refined courses far outscore AI-only). Pass `--reviewed-by "<name>"` **only after a human has actually answered them**; it stamps the "Human-verified" badge. Never stamp it to fake the badge.
-   - **Validation** still runs (referential integrity, unique ids, every MCQ/spot-bug correct, no prerequisite cycles) and **refuses to emit on failure**. Fix authoring errors; never bypass validation.
-4. **Run / verify by value:** `npm run dev` (learner app, :5174) + `npm run server` (dashboard API, :5175). Confirm: the **audience + depth + verified** badges read right; modules render in dependency order; diagrams reflect real cardinality and code-map/architecture nodes link to source; a misconception (or spot-bug) quiz fires its *targeted* correction; a wrong answer surfaces a **"due for review"** item; progress persists; and the dashboard shows stuck-points + per-concept mastery. For a non-technical bundle, confirm the code/architecture layers are absent and the register is plain.
-5. **Deploy (optional):** the engine is a standard Vite SPA + small Node API — deploy per-system on the project's usual targets (Vercel + Railway-style).
-
-### Freshness, discipline
-
-- The bundle records `provenance.sources[]` (KB file + content hash). When the knowledge base changes, **re-author the affected parts and re-run the generator** — regeneration only re-emits the bundle; the engine code is never touched (Approach A's safety property). Treat a `mark_stale`d entry or a recent compaction marker as a signal to re-verify the bundle against current sources before re-publishing.
-- **Grounding stays honest over time — and re-verification is diff-scoped, not whole-course.** `npm run reverify -- --system <id> --bundle <bundle.json> --repo <path> [--since <ref>] [--write]` diffs the repo from the bundle's pinned sha to HEAD, maps changed files → **exactly the modules whose blocks cite them** (the scoped re-author worklist), re-runs the grounding gate at HEAD, and with `--write` restamps the bundle (fresh `repo@sha`, per-block `verified`/`lineRange`; stale line anchors are dropped on drift). Exit 1 on drift/missing-file — hook it post-commit and every commit lands with a matching, re-verified course. Re-author only what the diff touched, then re-run the proof workflow for those modules.
-- **Standalone viewer (no agent, no LLM, no backend):** `npm run export` builds the SPA into `dist/` with the active bundle baked in — a static site anyone can open or host anywhere. Learner progress stays in `localStorage`; only the optional lead dashboard needs `npm run server`.
-- The engine is **system-agnostic** — never add system-specific logic to `src/`. If a system needs a bespoke interaction, add a new **block type** to the schema + a renderer (the extensible-widget seam); don't fork the engine.
-- Run `npm test` (generator + dashboard-aggregation logic) and `npm run typecheck` before publishing a bundle. The validator and tests are the guard rails.
-- The dashboard's aggregate stuck-points are **candidate `gotchas.md` entries** — when many learners miss the same misconception, the teaching (or the system design) needs attention. Feed it back via the MCP's `append_gotcha`.
+**The full procedure is `${CLAUDE_SKILL_DIR}/references/course-generation.md`. Read it in full before generating or proving a course; do not work from this summary.** It covers the audience and depth knobs (ask the user both), the comprehensiveness bar, the knowledge-base-to-bundle authoring mapping, simulations and annotated screens, the code/architecture layer, Path B's disk-bus loop and assembler, the grounding gate, the proof report (faithful / true / effective) with its measurement-integrity rules, and the freshness discipline (`reverify`, `export`). The engine lives at `${CLAUDE_SKILL_DIR}/onboarding-template/` and its contract is `schema/bundle.ts`; never add system-specific logic to its `src/`.
 
 ## Confusion Signals and Re-Framing
 

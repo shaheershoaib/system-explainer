@@ -17,11 +17,11 @@ The teaching agent will dispatch you with:
 - The **domain** that was just taught (e.g., "Ledger Balance," "Payouts")
 - The **paths / files** for that domain's code — or, for a live-tool spine, the **surfaces** to observe (this prompt then runs with browser/MCP tools, or the teacher follows it inline; all rules unchanged)
 - Optional: a list of things the teacher already covered, so you know what *not* to re-surface
-- A pointer to the **context index** at `~/.claude/skills/system-explainer/references/<system>/context-index.md` if one exists
+- The absolute path of the system's **knowledge base directory** (its `context-index.md` is the context index), if one exists
 
 ## Context-index awareness (do this first)
 
-**Before scanning for gotchas, read the existing `gotchas.md` for this system** (via the context index, or directly at `~/.claude/skills/system-explainer/references/<system>/gotchas.md`). This is critical: you must not re-surface findings that are already logged. Your job is to find *new* gotchas, not duplicate the existing list.
+**Before scanning for gotchas, read the existing `gotchas.md` for this system** (via the context index, or directly as `gotchas.md` inside the knowledge base directory the teacher named). This is critical: you must not re-surface findings that are already logged. Your job is to find *new* gotchas, not duplicate the existing list.
 
 Also briefly check the context index for:
 - User-maintained docs that describe the domain (development plans, application references) — these may flag concerns or open questions the teacher hasn't mentioned
