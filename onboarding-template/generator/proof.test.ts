@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hash, seededShuffle, buildLearnerQuiz, buildGenQuiz, collectClaims, scoreItem, scoreLearner, tallyAdversarial, renderLessons, mergeManifestModules } from './proof'
+import { hash, seededShuffle, buildLearnerQuiz, buildGenQuiz, collectClaims, collectCitedPaths, scoreItem, scoreLearner, tallyAdversarial, renderLessons, mergeManifestModules } from './proof'
 
 describe('seededShuffle', () => {
   it('is deterministic for a given seed and a permutation of the input', () => {
@@ -222,5 +222,52 @@ describe('mergeManifestModules', () => {
   })
   it('drops ids the bundle no longer has', () => {
     expect(mergeManifestModules(['zz', 'a'], ['b'], order)).toEqual(['a', 'b'])
+  })
+})
+
+describe('trace blocks ("the life of one X") in the learner view + claim extraction', () => {
+  const trace = {
+    id: 'life-of-one-invoice',
+    title: 'Invoice lifecycle',
+    subject: 'one invoice',
+    intro: 'An invoice is born in draft.',
+    steps: [
+      { id: 't1', label: 'Invoice.create()', component: 'billing-api', actor: 'clerk', note: 'Rows start as DRAFT.', sourcePath: 'billing/models.py:10-20' },
+      { id: 't2', label: 'status = ISSUED', component: 'billing-api', note: 'Issuing locks the amount.' },
+      { id: 't3', label: 'PAID' },
+    ],
+    outro: 'Paid is terminal.',
+  }
+  const traceModule = {
+    ...moduleFixture,
+    lessons: [{ id: 'l1', title: 'L1', blocks: [{ type: 'trace', traceId: 'life-of-one-invoice' }, ...moduleFixture.lessons[0].blocks] }],
+  }
+
+  it('renders the trace as a titled, numbered list of exact labels with component/actor and note', () => {
+    const md = renderLessons(traceModule, [trace])
+    expect(md).toContain('**Invoice lifecycle: the life of one invoice**')
+    expect(md).toContain('An invoice is born in draft.')
+    expect(md).toContain('1. Invoice.create() (billing-api / clerk) - Rows start as DRAFT.')
+    expect(md).toContain('2. status = ISSUED (billing-api) - Issuing locks the amount.')
+    expect(md).toContain('3. PAID')
+    expect(md).toContain('Paid is terminal.')
+  })
+
+  it('treats each step note plus the intro/outro as claims, and cites step source files', () => {
+    const claims = collectClaims(traceModule, [trace])
+    const texts = claims.map((c) => c.text)
+    expect(texts).toContain('An invoice is born in draft.')
+    expect(texts).toContain('Paid is terminal.')
+    expect(texts).toContain('[trace step 1: Invoice.create() @ billing/models.py:10-20] Rows start as DRAFT.')
+    expect(texts).toContain('[trace step 2: status = ISSUED] Issuing locks the amount.')
+    expect(texts.some((t) => t.includes('PAID'))).toBe(false) // a step without a note asserts nothing
+    expect(claims).toHaveLength(6) // prose + callout from the base fixture, intro, two notes, outro
+    expect(new Set(claims.map((c) => c.id)).size).toBe(6)
+    expect(collectCitedPaths(traceModule, [trace])).toEqual(expect.arrayContaining(['a/b.py', 'billing/models.py']))
+  })
+
+  it('renders nothing for a trace block whose trace is missing (validation owns that error)', () => {
+    expect(renderLessons(traceModule, [])).not.toContain('the life of')
+    expect(collectClaims(traceModule, [])).toHaveLength(2)
   })
 })
