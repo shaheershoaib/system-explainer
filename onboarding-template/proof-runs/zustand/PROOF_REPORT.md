@@ -12,11 +12,11 @@ _Stamped by the grounding gate at author time; re-checked on every release so it
 ## Layer 2 — True · adversarial claim verification
 A skeptic agent re-read each prose/callout assertion and tried to **refute** it against `zustand@b57db4f86ef179285da216eeb291266da82c361c`, defaulting to "refuted/unverifiable" unless the code directly backs it.
 
-- **155** supported
+- **184** supported
 - **0** refuted 
 - **0** unverifiable (no code evidence either way)
 
-Survival rate: **100%** of 155 atomic claims.
+Survival rate: **100%** of 184 atomic claims.
 
 ## Layer 3 — Effective · simulated learner on a hardened comprehension quiz
 

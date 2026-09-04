@@ -3,7 +3,7 @@
   "repoRef": "zustand@b57db4f86ef179285da216eeb291266da82c361c",
   "grounding": {
     "repoRef": "zustand@b57db4f86ef179285da216eeb291266da82c361c",
-    "verifiedAt": "2026-09-04T07:56:29.628Z",
+    "verifiedAt": "2026-09-04T09:16:57.091Z",
     "total": 17,
     "verified": 17,
     "partial": 0,
@@ -12,8 +12,8 @@
     "exact": 17
   },
   "adversarial": {
-    "total": 155,
-    "supported": 155,
+    "total": 184,
+    "supported": 184,
     "refuted": 0,
     "unverifiable": 0
   },

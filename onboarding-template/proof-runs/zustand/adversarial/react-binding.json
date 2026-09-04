@@ -2,206 +2,355 @@
   "moduleId": "react-binding",
   "claims": [
     {
-      "claim": "[rb-create-b0] `create` builds a vanilla store (it calls `createStore`).",
+      "claim": "The trace has five hand-offs inside the store (src/vanilla.ts) and three in the React binding (src/react.ts).",
       "verdict": "supported",
-      "evidence": "src/react.ts:54 `const api = createStore(createState)` inside `createImpl`; `createStore` is imported from ./vanilla.ts at src/react.ts:2."
+      "evidence": "Steps 1-5 cite src/vanilla.ts:66,69-72,73,74-78,79 (all inside setState, lines 66-81); steps 6-8 cite src/react.ts:30-34,32,35-36 (all inside useStore, lines 26-37). Every cited line exists and matches its label."
     },
     {
-      "claim": "[rb-create-b0] `create` returns a hook (a function that calls `useStore(api, selector)`).",
+      "claim": "The store side is identical with or without React.",
       "verdict": "supported",
-      "evidence": "src/react.ts:56 `const useBoundStore: any = (selector?: any) => useStore(api, selector)` and :60 `return useBoundStore`; call-signature type at src/react.ts:39-42 (`UseBoundStore`).",
-      "note": "Precision: `create` called with NO initializer returns `createImpl` itself (curried `create<T>()(...)` form, src/react.ts:63-64), not a hook. Only the initializer-bearing call returns the hook."
+      "evidence": "src/react.ts:2 imports createStore from './vanilla.ts' and src/react.ts:54 calls it; src/vanilla.ts has no React import. README.md:228-239 ('Using zustand without React': createStore from 'zustand/vanilla')."
     },
     {
-      "claim": "[rb-create-b0] `create` copies the store's methods onto the returned hook.",
+      "claim": "React's involvement starts at step 6.",
       "verdict": "supported",
-      "evidence": "src/react.ts:58 `Object.assign(useBoundStore, api)`. Runtime check in a scratch copy of the repo at b57db4f (React 19.2.8, vitest 4.1.10): `Object.keys(useBear).sort()` === ['getInitialState','getState','setState','subscribe'] and `getState` is NOT on the hook's prototype (own property) - passed, exit 0."
+      "evidence": "Steps 1-5 are src/vanilla.ts:66-79, a file with no React dependency; step 6 is the first React call, src/react.ts:30 React.useSyncExternalStore."
     },
     {
-      "claim": "[rb-create-b0] The copied methods are `setState`, `getState`, `subscribe`, `getInitialState`.",
+      "claim": "Trace step 1 label is a verbatim fragment of src/vanilla.ts:66.",
       "verdict": "supported",
-      "evidence": "src/vanilla.ts:94 `const api = { setState, getState, getInitialState, subscribe }`; StoreApi interface src/vanilla.ts:9-14 lists exactly those four; tests/basic.test.tsx:22-43 snapshot of the api object shows the same four keys.",
-      "note": "Completeness: `Object.assign` copies EVERY own enumerable property of `api`, so middleware-added members ride along too, e.g. `api.persist` (src/middleware/persist.ts:337), `api.devtools` (src/middleware/devtools.ts:246), `api.dispatch` (src/middleware/redux.ts:42). The four named are the un-middlewared base set, not an exhaustive list."
+      "evidence": "src/vanilla.ts:66 reads `const setState: StoreApi<TState>['setState'] = (partial, replace) => {`; whitespace-collapsed label is a substring (checked programmatically)."
     },
     {
-      "claim": "[rb-create-b0] The returned `useBear` is both a hook AND a handle callable outside React.",
+      "claim": "`set` is the store's own `setState`, handed to the state creator as its first argument via `createState(setState, getState, api)` at src/vanilla.ts:95.",
       "verdict": "supported",
-      "evidence": "Type: src/react.ts:39-42 `UseBoundStore<S> = { (): ExtractState<S>; <U>(selector): U } & S`. Runtime (scratch copy test): `typeof useBear === 'function'`, `useBear.setState({bears:2}); useBear.getState().bears === 2; useBear.getInitialState().bears === 0` - passed. README.md:174-190 shows the same dual use."
+      "evidence": "src/vanilla.ts:95: `const initialState = (state = createState(setState, getState, api))`."
     },
     {
-      "claim": "[rb-create-b3] No `<Provider>` is needed to use a store created with `create`.",
+      "claim": "setState's parameters are `(partial, replace)` (src/vanilla.ts:66).",
       "verdict": "supported",
-      "evidence": "README.md:45 'Use the hook anywhere, no providers are needed.'; docs/learn/getting-started/introduction.md:58 'You can use the hook anywhere, without the need of providers.'; README.md:443 'The store created with `create` doesn't require context providers.'"
+      "evidence": "src/vanilla.ts:66."
     },
     {
-      "claim": "[rb-create-b3] The reason no Provider is needed is that the hook closes over its store instead of reading it from React context.",
+      "claim": "The SetStateInternal overloads (src/vanilla.ts:1-7) make `replace` optional for the merge form and require `true` for the replace form.",
       "verdict": "supported",
-      "evidence": "src/react.ts:53-56: `api` is a local of `createImpl` captured by the `useBoundStore` closure; `grep -rn 'createContext|useContext|Context' src/` returns no matches, so nothing in the library reads a store from context."
+      "evidence": "src/vanilla.ts:4 `replace?: false` (optional); src/vanilla.ts:6 `replace: true` (required literal true)."
     },
     {
-      "claim": "[rb-create-b3] The store is a module-level singleton you import directly.",
+      "claim": "At step 1 nothing has changed yet.",
       "verdict": "supported",
-      "evidence": "This is the documented default pattern: README.md:34-40 and docs/learn/getting-started/introduction.md:46-53 call `create` at module top level and import the hook into components (README.md:47-56).",
-      "note": "It is a usage convention, not something the code enforces: `create` can be called anywhere, and the repo's own docs show non-singleton patterns - README.md:441-465 (vanilla store injected via React context) and docs/learn/guides/nextjs.md:31 '**No global stores** - Because the store should not be shared across requests'. The course should not present 'module-level singleton' as an invariant."
+      "evidence": "src/vanilla.ts:66-72 perform no assignment to `state` and call no listener; `state` is first reassigned at line 75."
     },
     {
-      "claim": "[rb-create-b3] Redux wraps your app in a context provider (per the comparison doc).",
+      "claim": "Trace step 2 label is a verbatim fragment of src/vanilla.ts:69-72.",
       "verdict": "supported",
-      "evidence": "docs/learn/getting-started/comparison.md:21-22 'Redux requires your app to be wrapped in context providers; Zustand does not.' Also README.md:63 'Doesn't wrap your app in context providers' under 'Why zustand over redux?'."
+      "evidence": "src/vanilla.ts:69-72 collapse to `const nextState = typeof partial === 'function' ? (partial as (state: TState) => TState)(state) : partial`, identical to the label."
     },
     {
-      "claim": "[rb-create-b3] Recoil wraps your app in a context provider (per the comparison doc).",
+      "claim": "If `partial` is a function, setState calls it with the current `state` and its return value becomes `nextState`; otherwise `partial` itself is `nextState`.",
       "verdict": "supported",
-      "evidence": "docs/learn/getting-started/comparison.md:399 'Additionally, Recoil needs to wrap your app in a context provider.'"
+      "evidence": "src/vanilla.ts:69-72 (ternary on typeof partial === 'function')."
     },
     {
-      "claim": "[rb-create-b3] A comparison doc exists that covers this contrast.",
+      "claim": "The updater runs synchronously inside setState, and `state` is still the previous value when it runs.",
       "verdict": "supported",
-      "evidence": "docs/learn/getting-started/comparison.md (sections 'Redux' :15 and 'Recoil' :391); README.md:510-512 links to it."
+      "evidence": "src/vanilla.ts:71 invokes `partial(state)` inline; `state` is only reassigned at src/vanilla.ts:75-78, after the call."
     },
     {
-      "claim": "[rb-usestore-b0] `useStore` calls React's `useSyncExternalStore`.",
+      "claim": "Trace step 3 label is a verbatim fragment of src/vanilla.ts:73.",
       "verdict": "supported",
-      "evidence": "src/react.ts:30 `const slice = React.useSyncExternalStore(`; React imported as default at src/react.ts:1."
+      "evidence": "src/vanilla.ts:73: `if (!Object.is(nextState, state)) {`."
     },
     {
-      "claim": "[rb-usestore-b0] `useStore` passes the store's `subscribe` to `useSyncExternalStore`.",
+      "claim": "Merge and notify both live inside the `if (!Object.is(nextState, state))` block.",
       "verdict": "supported",
-      "evidence": "src/react.ts:31 `api.subscribe,` is the first argument."
+      "evidence": "src/vanilla.ts:73-80: previousState (74), assignment/merge (75-78) and listeners.forEach (79) are all inside the block closed at line 80."
     },
     {
-      "claim": "[rb-usestore-b0] `useStore` passes a getSnapshot that is the selector applied to `getState()`.",
+      "claim": "When the updater returns the current state object itself, the call ends at the bail-out: nothing is merged and no listener fires.",
       "verdict": "supported",
-      "evidence": "src/react.ts:32 `React.useCallback(() => selector(api.getState()), [api, selector])`; default selector is `identity` (src/react.ts:16, :28)."
+      "evidence": "src/vanilla.ts:73 guard; Object.is(x, x) is true so lines 74-79 are skipped. tests/vanilla/basic.test.ts:99-107 ('both NaN should not update') asserts the listener is not called when Object.is holds."
     },
     {
-      "claim": "[rb-usestore-b0] zustand supplies three functions to `useSyncExternalStore`.",
+      "claim": "Only the reference is compared, never the contents, so a fresh object with identical fields passes the check and notifies everyone.",
       "verdict": "supported",
-      "evidence": "src/react.ts:31-33: three arguments - `api.subscribe`, getSnapshot `() => selector(api.getState())`, getServerSnapshot `() => selector(api.getInitialState())`.",
-      "note": "The course names only two of the three. The third, `getServerSnapshot = selector(api.getInitialState())` (src/react.ts:33), is what SSR/hydration uses; omitting it leaves the learner unable to explain why `getInitialState` exists on the store API (src/vanilla.ts:85-86)."
+      "evidence": "src/vanilla.ts:73 uses Object.is, which is identity for objects; no deep/shallow comparison exists in setState (src/vanilla.ts:66-81).",
+      "note": "For primitives Object.is compares by value (e.g. NaN equals NaN, tests/vanilla/basic.test.ts:99-107); 'never on contents' is accurate for objects."
     },
     {
-      "claim": "[rb-usestore-b0] React owns the subscription lifecycle; zustand does not subscribe/unsubscribe itself in the React layer.",
+      "claim": "Trace step 4 label is a verbatim fragment of the cited lines src/vanilla.ts:74-78.",
       "verdict": "supported",
-      "evidence": "src/react.ts contains no useEffect/useLayoutEffect and never invokes `api.subscribe` - it only passes the reference (:31). React side (installed react-dom 19.2.8, cjs/react-dom-client.development.js): `mountSyncExternalStore` registers `subscribeToStore` via `mountEffect(..., [subscribe])` (:8143-8146) and the effect cleanup is the unsubscribe returned by `subscribe` (:8243-8244). Contrast the pre-#550 hook which subscribed itself: `git show a34649d^:src/react.ts` lines 114-139."
+      "evidence": "src/vanilla.ts:75-78 collapse to `state = (replace ?? (typeof nextState !== 'object' || nextState === null)) ? (nextState as TState) : Object.assign({}, state, nextState)`, identical to the label; line 74 is `const previousState = state`."
     },
     {
-      "claim": "[rb-usestore-b2] `set` notifies the listeners (including the one React registered).",
+      "claim": "`const previousState = state` (src/vanilla.ts:74) keeps the old value for the listeners.",
       "verdict": "supported",
-      "evidence": "src/vanilla.ts:79 `listeners.forEach((listener) => listener(state, previousState))`, executed only when `!Object.is(nextState, state)` (src/vanilla.ts:73); React's listener is added via `api.subscribe` (src/vanilla.ts:88-92)."
+      "evidence": "src/vanilla.ts:74, consumed at src/vanilla.ts:79 `listener(state, previousState)`."
     },
     {
-      "claim": "[rb-usestore-b2] On notification React re-runs the selector over the fresh state.",
+      "claim": "An explicit `replace` wins: `true` assigns `nextState` wholesale, `false` merges.",
       "verdict": "supported",
-      "evidence": "The function React re-runs is zustand's getSnapshot `() => selector(api.getState())` (src/react.ts:32). react-dom 19.2.8: `subscribeToStore` callback -> `checkIfSnapshotChanged(inst)` -> `latestGetSnapshot()` (react-dom-client.development.js:8243-8255). Docs corroborate the observable behaviour: docs/learn/getting-started/introduction.md:59-60 'Select your state and the consuming component will re-render when that state changes.'",
-      "note": "Attributed to React; evidence is React's implementation plus the repo docs' description of the result."
+      "evidence": "src/vanilla.ts:76 `replace ?? (...)`: `??` only falls through on null/undefined, so `true` selects line 77 and `false` selects line 78 Object.assign. tests/basic.test.tsx:470 'can set the store without merging' covers the true path."
     },
     {
-      "claim": "[rb-usestore-b2] React compares the new selector result to the previous one and re-renders the component only if it changed.",
+      "claim": "When `replace` is omitted, a non-object or `null` `nextState` is assigned directly and an object is merged with `Object.assign({}, state, nextState)`.",
       "verdict": "supported",
-      "evidence": "react-dom 19.2.8 react-dom-client.development.js:8245-8247 `checkIfSnapshotChanged(inst) && (... forceStoreRerender(fiber))`. Repo docs: docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 'The computed selector will cause a rerender if the output has changed according to Object.is'; README.md:86. A regression test for this exists at tests/basic.test.tsx:131 'only re-renders if selected state has changed' (existence cited; I did not run that one)."
+      "evidence": "src/vanilla.ts:76-78."
     },
     {
-      "claim": "[rb-usestore-b2] The default comparison is `Object.is`.",
+      "claim": "The merge is one level deep: a nested object you did not spread is replaced, not merged.",
       "verdict": "supported",
-      "evidence": "Repo docs: docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 ('according to Object.is'); docs/reference/hooks/use-shallow.md:271 ('the default equality check is `Object.is`'); docs/reference/apis/create-with-equality-fn.md:49 ('Defaults to `Object.is`'). React side: react-dom-client.development.js:8255 `return !objectIs(inst, nextValue)`.",
-      "note": "README.md:86 says 'It detects changes with strict-equality (old === new) by default', which is looser than the truth: the actual comparison is Object.is both in React's snapshot check and in vanilla `setState` (src/vanilla.ts:73). The two differ on NaN and +0/-0. The course is more accurate than the README here."
+      "evidence": "src/vanilla.ts:78 Object.assign is shallow; docs/learn/guides/immutable-state-and-merging.md:35-36 'The `set` function merges state at only one level. If you have a nested object, you need to merge them explicitly.'"
     },
     {
-      "claim": "[rb-usestore-b3] The introduction doc says zustand deals with the zombie child, React concurrency, and context loss pitfalls.",
+      "claim": "Trace step 5 label is a verbatim fragment of src/vanilla.ts:79.",
       "verdict": "supported",
-      "evidence": "docs/learn/getting-started/introduction.md:17-20 'Lots of time was spent to deal with common pitfalls, like the dreaded [zombie child problem], [React concurrency], and [context loss] between mixed renderers.'; same sentence in README.md:19."
+      "evidence": "src/vanilla.ts:79: `listeners.forEach((listener) => listener(state, previousState))`."
     },
     {
-      "claim": "[rb-usestore-b3] `src/react.ts` never uses React context.",
+      "claim": "Every listener in the store's Set is called synchronously with the new `state` and the `previousState`.",
       "verdict": "supported",
-      "evidence": "src/react.ts uses only React.useSyncExternalStore (:30), React.useCallback (:32-33), React.useDebugValue (:35); `grep -rn 'createContext|useContext|Context' src/` -> no matches anywhere under src/."
+      "evidence": "src/vanilla.ts:64 `const listeners: Set<Listener> = new Set()`; src/vanilla.ts:79 synchronous forEach passing (state, previousState)."
     },
     {
-      "claim": "[rb-usestore-b3] The hook simply closes over its store.",
+      "claim": "There is no filtering at notification: the store does not know what any subscriber selected, so every subscriber hears about every change.",
       "verdict": "supported",
-      "evidence": "src/react.ts:53-56 - `api` is created in `createImpl` and captured by the `useBoundStore` arrow function."
+      "evidence": "src/vanilla.ts:79 iterates all listeners with no predicate; src/vanilla.ts:88-92 stores the raw listener with no selector.",
+      "note": "Filtering exists only as an opt-in wrapper outside this line: src/middleware/subscribeWithSelector.ts:54 (equalityFn default Object.is)."
     },
     {
-      "claim": "[rb-usestore-b3] Context loss between mixed renderers is avoided structurally (there is no context to lose).",
+      "claim": "Listeners enter the Set through `subscribe` (`listeners.add(listener)`, src/vanilla.ts:88-92).",
       "verdict": "supported",
-      "evidence": "Follows from the two facts above (no context in src/, closure over the store). The docs link the pitfall to facebook/react#13332 (docs/learn/getting-started/introduction.md:27), a context-propagation-across-renderers issue; a hook that reads a closed-over module value is unaffected by which renderer renders it.",
-      "note": "This is an inference from code structure, not something the repo states or tests. No test in tests/ exercises multiple renderers."
+      "evidence": "src/vanilla.ts:89 `listeners.add(listener)`; src/vanilla.ts:91 returns the deleter."
     },
     {
-      "claim": "[rb-usestore-b3] Zombie-child safety was hand-rolled until April 2022.",
+      "claim": "Trace step 6 label `React.useSyncExternalStore` is a verbatim fragment of src/react.ts:30-34.",
       "verdict": "supported",
-      "evidence": "`git show a34649d^:src/react.ts` (the parent of #550) lines 65-146 is the hand-rolled hook; the post-subscribe re-check line was introduced by 6418d36 2020-08-23 'fix: detect state change before subscription' and removed by a34649d, dated 'Thu Apr 7 23:53:27 2022 +0900' (git show a34649d). April 2022 is correct."
+      "evidence": "src/react.ts:30: `const slice = React.useSyncExternalStore(`."
     },
     {
-      "claim": "[rb-usestore-b3] That change was PR #550.",
+      "claim": "The hook that `create` returns delegates to `useStore` via `useStore(api, selector)` at src/react.ts:56.",
       "verdict": "supported",
-      "evidence": "Commit a34649d35ab6dc91b658729a94764a5c1560fcda, subject 'feat: use-sync-external-store (#550)', author Daishi Kato. `git log -S useSyncExternalStore -- src/` shows it as the first commit introducing the API."
+      "evidence": "src/react.ts:56: `const useBoundStore: any = (selector?: any) => useStore(api, selector)`."
     },
     {
-      "claim": "[rb-usestore-b3] The hand-rolled implementation subscribed with `useReducer` + refs.",
+      "claim": "`useStore` passes `api.subscribe` to `React.useSyncExternalStore` as its subscribe function (src/react.ts:30-31).",
       "verdict": "supported",
-      "evidence": "a34649d^:src/react.ts:69 `const [, forceUpdate] = useReducer((c) => c + 1, 0)`; refs at :72-77 (stateRef, selectorRef, equalityFnRef, erroredRef, currentSliceRef) and :113 (stateBeforeSubscriptionRef); the subscription itself at :134 `const unsubscribe = api.subscribe(listener)` inside a useIsomorphicLayoutEffect (:114). `git log -S useReducer -- src/` confirms useReducer left src/ in a34649d."
+      "evidence": "src/react.ts:30-31."
     },
     {
-      "claim": "[rb-usestore-b3] The hand-rolled implementation re-checked state after subscribing.",
+      "claim": "In a React app the listener called at step 5 is React's own: React subscribes through `api.subscribe`, so the callback in the listeners Set comes from React.",
       "verdict": "supported",
-      "evidence": "a34649d^:src/react.ts:135-137 `if (api.getState() !== stateBeforeSubscriptionRef.current) { listener() // state has changed before subscription }`."
+      "evidence": "src/react.ts:26-37: useStore never calls api.subscribe itself and has no effect; the only subscribe path from the hook is the `api.subscribe` handed to React at src/react.ts:31, so whatever lands in the Set (src/vanilla.ts:89) via the hook is the callback React passes.",
+      "note": "Inference from code structure; React's internals are not in the repo."
     },
     {
-      "claim": "[rb-usestore-b3] That hand-rolled code was deleted when zustand adopted `useSyncExternalStore` (same change).",
+      "claim": "zustand supplies only three functions to useSyncExternalStore: `api.subscribe` and two snapshot readers.",
       "verdict": "supported",
-      "evidence": "`git show a34649d -- src/react.ts`: removes the whole `useStore` body (old lines 65-146 incl. useReducer, refs, and the re-check) and adds `useSyncExternalStoreWithSelector(api.subscribe, api.getState, ...)`; stat: src/react.ts 127 lines changed, 159 deletions across the commit."
+      "evidence": "src/react.ts:31-33: exactly three arguments."
     },
     {
-      "claim": "[rb-usestore-b3] `useSyncExternalStore` is React's public API for subscribing to an external store.",
+      "claim": "Trace step 7 label `selector(api.getState())` is a verbatim fragment of src/react.ts:32.",
       "verdict": "supported",
-      "evidence": "Current code calls it as an export of the `react` package: src/react.ts:30 `React.useSyncExternalStore` with peerDependency `react >=18.0.0` (package.json).",
-      "note": "History nuance the course glosses: #550 originally imported `use-sync-external-store/shim/with-selector` (the React team's shim package for React 17, see the a34649d diff) - the direct `React.useSyncExternalStore` call arrived with v5 (e247220, 2024-08-16). The shim is still used today by src/traditional.ts:2 (`createWithEqualityFn` path) and remains a peerDependency (`use-sync-external-store >=1.2.0`)."
+      "evidence": "src/react.ts:32: `React.useCallback(() => selector(api.getState()), [api, selector]),`."
     },
     {
-      "claim": "[rb-usestore-b3] `useSyncExternalStore` now performs the subscription and the post-subscribe re-check itself.",
+      "claim": "The snapshot reader is the selector applied to the store's current state: `React.useCallback(() => selector(api.getState()), [api, selector])` (src/react.ts:32).",
       "verdict": "supported",
-      "evidence": "Installed react-dom 19.2.8, cjs/react-dom-client.development.js: `mountSyncExternalStore` pushes the subscribe effect `mountEffect(subscribeToStore.bind(...), [subscribe])` (:8143-8146) AND a passive effect `updateStoreInstance` (:8148-8158) which does `checkIfSnapshotChanged(inst) && forceStoreRerender(fiber)` (:8238-8241) - the post-subscribe re-check; plus `pushStoreConsistencyCheck` for non-sync lanes (:8138). zustand's react.ts contains none of this any more (src/react.ts:30-34).",
-      "note": "Attributed to React. The repo's docs are silent on the mechanism, so the evidence here is React's own source, not the repo."
+      "evidence": "src/react.ts:32."
     },
     {
-      "claim": "[rb-usestore-b3] The old zombie-child regression test still passes through `useSyncExternalStore`.",
+      "claim": "`getState` is simply `() => state` (src/vanilla.ts:83).",
       "verdict": "supported",
-      "evidence": "Test: tests/basic.test.tsx:564 'ensures parent components subscribe before children' (parent selects the map, children select `s.childItems[id]?.text`, state swaps to a child that did not exist; asserts 'child 3' renders) - the parent/child subscription-order scenario that react-redux's 'stale props and zombie children' page (linked at docs/learn/getting-started/introduction.md:25) describes. Age: introduced e77ab24 2019-10-09 'Zustand 2.x // Ensure order of subscribers (#65)'; present before #550 at a34649d^:tests/basic.test.tsx:474; #550's test diff did not touch it. Run: scratch copy of the repo at HEAD b57db4f, `pnpm install --frozen-lockfile` then `vitest run tests/basic.test.tsx -t 'ensures parent components subscribe before children'` -> passed, REAL_EXIT=0 ('Tests 3 passed | 20 skipped').",
-      "note": "The word 'zombie' appears nowhere in tests/ (and `git log -S zombie -- tests/ src/` returns no commits), so identifying this as THE zombie-child test rests on the scenario, not on naming. The test has been edited since 2022 (was `async () =>` at a34649d^:474, is sync at HEAD:564) - 'old' is fair, 'unchanged' would not be."
+      "evidence": "src/vanilla.ts:83."
     },
     {
-      "claim": "[rb-usestore-b3] The concurrency guarantee is React's; the repo's docs describe the result ('safe under React concurrency') rather than implementing it.",
+      "claim": "After the notification React calls the snapshot reader again and compares the new selection with the previous one.",
       "verdict": "supported",
-      "evidence": "docs/index.md:17-18 `title: Safe under React concurrency` / 'Built to avoid zombie children and tearing issues while keeping renders predictable.'; docs/learn/getting-started/introduction.md:19,26 links the useMutableSource RFC. src/react.ts has no concurrency-specific code - it delegates entirely to React.useSyncExternalStore (:30-34); `grep -rn -i concurren src/` hits only an unrelated persist comment (src/middleware/persist.ts:202).",
-      "note": "Quote matches docs/index.md:17 modulo capitalization."
+      "evidence": "Attributed to React; repo docs state the result: docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 'The computed selector will cause a rerender if the output has changed according to Object.is'; observable in tests/basic.test.tsx:131-164 (Control selecting `state.inc` renders once while Counter re-renders).",
+      "note": "The re-invoke/compare mechanism itself lives in React, not in this repo."
     },
     {
-      "claim": "[rb-outside-b0] Because the API is stapled onto the hook, the store can be used from plain (non-React) modules.",
+      "claim": "A second reader, `selector(api.getInitialState())`, is passed alongside (src/react.ts:33).",
       "verdict": "supported",
-      "evidence": "src/react.ts:58 `Object.assign(useBoundStore, api)`; README.md:168-184 calls `useDogStore.getState()/subscribe()/setState()` at module scope outside any component; scratch-copy runtime test called `useBear.setState`/`getState`/`getInitialState` outside React - passed."
+      "evidence": "src/react.ts:33; getInitialState defined at src/vanilla.ts:85-86."
     },
     {
-      "claim": "[rb-outside-b0] `getState` is a non-reactive read.",
+      "claim": "Trace step 8 label `return slice` is a verbatim fragment of src/react.ts:35-36.",
       "verdict": "supported",
-      "evidence": "README.md:177-178 '// Getting non-reactive fresh state' `const paw = useDogStore.getState().paw`; src/vanilla.ts:83 `const getState = () => state` (no subscription side effect)."
+      "evidence": "src/react.ts:36 `return slice`; src/react.ts:35 `React.useDebugValue(slice)`."
     },
     {
-      "claim": "[rb-outside-b0] `setState` writes state.",
+      "claim": "When the new selection differs, React re-renders the component and `useStore` returns the new `slice` after `React.useDebugValue(slice)` (src/react.ts:35-36).",
       "verdict": "supported",
-      "evidence": "README.md:181-182 '// Updating state, will trigger listeners' `useDogStore.setState({ paw: false })`; src/vanilla.ts:66-81."
+      "evidence": "src/react.ts:35-36; tests/basic.test.tsx:131-164 counterRenderCount becomes 2 after the click (line 162)."
     },
     {
-      "claim": "[rb-outside-b0] `subscribe` lets you react to changes.",
+      "claim": "When the selection is the same, the component does not re-render even though its listener was called at step 5.",
       "verdict": "supported",
-      "evidence": "README.md:179-180 '// Listening to all changes, fires synchronously on every change' `useDogStore.subscribe(console.log)`; src/vanilla.ts:88-92 (returns an unsubscribe), listeners invoked synchronously at src/vanilla.ts:79."
+      "evidence": "tests/basic.test.tsx:145-149,163: Control's controlRenderCount stays 1 after setState; src/vanilla.ts:79 shows every listener (including Control's) is still invoked. Verified by running `vitest run tests/basic.test.tsx` on a scratch copy of b57db4f: 22/22 passed, exit 0."
     },
     {
-      "claim": "[rb-outside-b0] The README shows this directly.",
+      "claim": "Notification is broadcast to every subscriber; re-rendering is decided per component by comparing selections.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:79 (broadcast) plus tests/basic.test.tsx:131-164 and docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 (per-component selection compare)."
+    },
+    {
+      "claim": "`set` bails only on the reference the updater returns, never on contents.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 `Object.is(nextState, state)`; no content comparison anywhere in src/vanilla.ts:66-81.",
+      "note": "Object.is is value-equality for primitives (NaN case, tests/vanilla/basic.test.ts:99-107); identity for objects."
+    },
+    {
+      "claim": "A narrow selector is the render optimization.",
+      "verdict": "supported",
+      "evidence": "README.md:86 'It detects changes with strict-equality (old === new) by default, this is efficient for atomic state picks'; docs/learn/getting-started/introduction.md:59-60; tests/basic.test.tsx:131-164."
+    },
+    {
+      "claim": "`useShallow` hands back the previous reference when a fresh selector result is shallow-equal, so the comparison can succeed.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:5-11: `shallow(prev.current, next) ? (prev.current as U) : (prev.current = next)`; docs/learn/guides/prevent-rerenders-with-use-shallow.md:11-12."
+    },
+    {
+      "claim": "`create` builds a vanilla store, then returns a hook.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:54 `const api = createStore(createState)`; src/react.ts:56,60 defines and returns useBoundStore."
+    },
+    {
+      "claim": "`create` copies the store's methods `setState`, `getState`, `subscribe`, `getInitialState` onto the hook.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:58 `Object.assign(useBoundStore, api)`; src/vanilla.ts:94 `const api = { setState, getState, getInitialState, subscribe }`; docs/reference/apis/create.md:47-48."
+    },
+    {
+      "claim": "The returned hook is both a hook and a handle you can call outside React.",
+      "verdict": "supported",
+      "evidence": "README.md:168-190 (getState/subscribe/setState called on useDogStore outside a component, then used as a hook at 187-188); tests/basic.test.tsx:22 'creates a store hook and api object'."
+    },
+    {
+      "claim": "No `<Provider>` is needed to use a store created with `create`.",
+      "verdict": "supported",
+      "evidence": "README.md:45 'Use the hook anywhere, no providers are needed'; README.md:443; docs/learn/getting-started/introduction.md:58."
+    },
+    {
+      "claim": "No Provider is needed because the store is a module-level singleton you import directly.",
+      "verdict": "supported",
+      "evidence": "Mechanism: src/react.ts:53-60 creates one `api` per `create()` call and the returned hook closes over it (line 56); no context is used (grep of src/ for createContext/useContext: none). Docs examples define the hook at module top level (README.md:36, docs/learn/getting-started/introduction.md:48).",
+      "note": "The repo never uses the word 'singleton'; there is one store per create() call, and module-level placement is convention, not enforced."
+    },
+    {
+      "claim": "Redux and Recoil wrap your app in a context provider, per the comparison doc.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/comparison.md:21-22 'Redux requires your app to be wrapped in context providers; Zustand does not'; :399 'Recoil needs to wrap your app in a context provider.'"
+    },
+    {
+      "claim": "`useStore` hands the store's `subscribe` and a `getSnapshot` (the selector applied to `getState()`) to React's `useSyncExternalStore`.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-32."
+    },
+    {
+      "claim": "React owns the subscription lifecycle; zustand just supplies the three functions.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:26-37 contains no subscribe/unsubscribe call and no effect; the three arguments are src/react.ts:31-33.",
+      "note": "Inference from the absence of any subscription management in useStore; React internals are not in the repo."
+    },
+    {
+      "claim": "When `set` notifies React's listener, React re-runs the selector over the fresh state, compares the result to last time, and re-renders only if it changed.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/prevent-rerenders-with-use-shallow.md:9; README.md:45; tests/basic.test.tsx:131-164 (passes: 22/22 on scratch copy of b57db4f).",
+      "note": "Mechanism is React's; the repo documents and tests the result."
+    },
+    {
+      "claim": "The default comparison for the selection is `Object.is`.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 ('according to Object.is'); docs/reference/hooks/use-shallow.md:271 ('the default equality check is `Object.is`').",
+      "note": "README.md:86 phrases it as 'strict-equality (old === new)'; the comparison is implemented by React, not in src/react.ts."
+    },
+    {
+      "claim": "The introduction doc says zustand deals with the zombie child, React concurrency, and context loss pitfalls.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/introduction.md:17-20."
+    },
+    {
+      "claim": "`src/react.ts` never uses React context.",
+      "verdict": "supported",
+      "evidence": "grep -i context src/react.ts: no matches; no createContext/useContext anywhere in src/. The former src/context.ts was deleted in v5 (e247220, 2024-08-16, #2138)."
+    },
+    {
+      "claim": "The hook simply closes over its store.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:56 `(selector?: any) => useStore(api, selector)` captures `api` from line 54."
+    },
+    {
+      "claim": "Context loss between mixed renderers is avoided structurally.",
+      "verdict": "supported",
+      "evidence": "Follows from the two facts above (no context in src/react.ts; hook closes over api). README.md:19 links the pitfall to facebook/react#13332.",
+      "note": "No test in tests/ exercises mixed renderers (tests/vanilla/shallow.test.tsx:179 'mixed cases' is about shallow-compare inputs); this is a structural inference."
+    },
+    {
+      "claim": "Zombie-child safety was hand-rolled until April 2022 (#550).",
+      "verdict": "supported",
+      "evidence": "Pre-#550 hook: `git show a34649d^:src/react.ts` lines 65-146 (hand-rolled subscription, try/catch around the selector with erroredRef re-run at 85-100,115-133); removed by a34649d 'feat: use-sync-external-store (#550)', 2022-04-07.",
+      "note": "The part specifically aimed at the zombie-child failure (selector throwing on stale state) is the try/catch + erroredRef re-run (from bd1d775, 2020-08-17), which the claim does not name; README first claimed zombie-child handling in 66bf382 (2020-08-17)."
+    },
+    {
+      "claim": "Before #550, zustand subscribed with useReducer + refs.",
+      "verdict": "supported",
+      "evidence": "a34649d^:src/react.ts:69 `useReducer((c) => c + 1, 0)` forceUpdate; :72-77 five useRef holders; :134 `api.subscribe(listener)` inside useIsomorphicLayoutEffect."
+    },
+    {
+      "claim": "Before #550, zustand re-checked state after subscribing.",
+      "verdict": "supported",
+      "evidence": "a34649d^:src/react.ts:113,135-137: `if (api.getState() !== stateBeforeSubscriptionRef.current) { listener() // state has changed before subscription }`; introduced by 6418d36 'fix: detect state change before subscription' (2020-08-23)."
+    },
+    {
+      "claim": "That hand-rolled code was deleted when zustand adopted useSyncExternalStore in April 2022 (#550).",
+      "verdict": "supported",
+      "evidence": "a34649d (2022-04-07 +0900) diff of src/react.ts removes the useReducer/useRef/useLayoutEffect hook body (old lines 65-146) and replaces it with a useSyncExternalStoreWithSelector call."
+    },
+    {
+      "claim": "Adoption was first through the `use-sync-external-store` shim.",
+      "verdict": "supported",
+      "evidence": "a34649d src/react.ts: `import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/shim/with-selector'`; still present at v4.5.6 (`git show v4.5.6:src/react.ts`).",
+      "note": "It was the with-selector variant of the shim, not bare useSyncExternalStore."
+    },
+    {
+      "claim": "The direct `React.useSyncExternalStore` call landed in #2301, January 2024.",
+      "verdict": "supported",
+      "evidence": "6c9944b '[v5]: do not depend on use-sync-external-store (#2301)', 2024-01-20: drops the shim import and calls React's own `useSyncExternalStore` (destructured from ReactExports). Tagged the same day in v5.0.0-alpha.1 (43986a3, 2024-01-20).",
+      "note": "It landed on the v5 branch, not main: main received it via 'v5 (#2138)' e247220 on 2024-08-16 (v4.5.x kept the shim). The literal `React.useSyncExternalStore` member-access spelling dates from c08adc2 (#2703, 2024-09-15)."
+    },
+    {
+      "claim": "React's public API for subscribing to an external store now owns the subscription.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:1 `import React from 'react'`; src/react.ts:30 `React.useSyncExternalStore(api.subscribe, ...)`; no use-sync-external-store import remains in src/."
+    },
+    {
+      "claim": "The repo has an old zombie-child regression test.",
+      "verdict": "supported",
+      "evidence": "tests/basic.test.tsx:564-612 'ensures parent components subscribe before children' (added e77ab24, 2019-10-09, 'Zustand 2.x // Ensure order of subscribers (#65)') models the react-redux stale-props/zombie-child scenario the README links (README.md:19): a child selecting `s.childItems[id]?.text` after its key is removed. tests/basic.test.tsx:321-368 'can throw an error in selector' (b0d42c1, 2019-06-27) covers the throwing-selector variant.",
+      "note": "No test in the repo's history has ever been labelled 'zombie' (git log -S zombie -- tests src: no hits); the identification is by test content, not by name."
+    },
+    {
+      "claim": "That old regression test still passes through useSyncExternalStore.",
+      "verdict": "supported",
+      "evidence": "Ran `pnpm exec vitest run tests/basic.test.tsx` on a scratch copy of b57db4f (deps installed with pnpm 11.3.0, frozen lockfile): 22/22 passed, exit 0; targeted verbose run: 'ensures parent components subscribe before children' PASS, 'can throw an error in selector' PASS, 'only re-renders if selected state has changed' PASS."
+    },
+    {
+      "claim": "The concurrency guarantee is React's: the repo's docs describe the result ('safe under React concurrency') rather than implementing it.",
+      "verdict": "supported",
+      "evidence": "docs/index.md:17-18 feature 'Safe under React concurrency / Built to avoid zombie children and tearing issues'; src/react.ts:26-37 contains only the useSyncExternalStore call and no concurrency-specific code.",
+      "note": "Quote matches the doc modulo capitalization ('Safe under React concurrency')."
+    },
+    {
+      "claim": "Because the API is stapled onto the hook, you can use the store from plain modules: getState for a non-reactive read, setState to write, subscribe to react.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:58 Object.assign(useBoundStore, api); README.md:177-184 shows useDogStore.getState()/subscribe()/setState() outside components."
+    },
+    {
+      "claim": "The README shows using the store outside components directly.",
       "verdict": "supported",
       "evidence": "README.md:168-190, section 'Reading/writing state and reacting to changes outside of components'.",
-      "note": "The README's own mechanism description at README.md:170 ('utility functions attached to its prototype') is inaccurate - they are OWN properties set by Object.assign (src/react.ts:58); the scratch test confirmed `getState` is not on the hook's prototype. The course's 'stapled onto the hook' is the correct description; do not copy the README's 'prototype' wording."
+      "note": "README.md:170 says the utilities are 'attached to its prototype', which is inaccurate wording (Object.assign copies own properties, src/react.ts:58); a README flaw, not the course's."
     }
   ]
 }

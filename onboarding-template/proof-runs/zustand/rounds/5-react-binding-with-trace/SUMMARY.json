@@ -1,0 +1,11 @@
+{
+  "round": "3.1.0 trace, first pass",
+  "modules": [
+    "react-binding"
+  ],
+  "note": "react-binding re-attacked after the 8-step trace was added (3.1.0); one React-internal clause in a callout was unverifiable and was cut; the final pass (top-level adversarial/react-binding.json) is 67/67",
+  "claims": 66,
+  "supported": 65,
+  "refuted": 0,
+  "unverifiable": 1
+}

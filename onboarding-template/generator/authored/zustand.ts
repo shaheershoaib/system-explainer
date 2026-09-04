@@ -291,6 +291,97 @@ const bundle = {
     },
   ],
 
+  // ── Trace: the life of one set() call, entry trigger to terminal state ────────
+  // Every label is the expression at the cited lines of src/vanilla.ts / src/react.ts.
+  traces: [
+    {
+      id: 'life-of-one-set',
+      title: 'The life of one update',
+      subject: 'one set() call',
+      intro:
+        'Follow one `set()` call from the action that makes it to the component that repaints: five hand-offs inside the store (`src/vanilla.ts`) and three in the React binding (`src/react.ts`). The store side is identical with or without React; React’s involvement starts at step 6.',
+      steps: [
+        {
+          id: 'call',
+          label: `const setState: StoreApi<TState>['setState'] = (partial, replace) => {`,
+          component: 'vanilla-core',
+          actor: 'host-app',
+          entity: 'set-fn',
+          sourcePath: 'src/vanilla.ts:66',
+          note:
+            'An action calls `set`. That `set` is the store’s own `setState`, handed to your state creator as its first argument (`createState(setState, getState, api)`, src/vanilla.ts:95). Its parameters are `(partial, replace)` (src/vanilla.ts:66); the `SetStateInternal` overloads (src/vanilla.ts:1-7) make `replace` optional for the merge form and require `true` for the replace form. Nothing has changed yet.',
+        },
+        {
+          id: 'compute',
+          label: `const nextState = typeof partial === 'function' ? (partial as (state: TState) => TState)(state) : partial`,
+          component: 'vanilla-core',
+          entity: 'state',
+          sourcePath: 'src/vanilla.ts:69-72',
+          note:
+            'If `partial` is a function, `setState` calls it with the current `state` and its return value becomes `nextState`; otherwise `partial` itself is `nextState`. Your updater runs synchronously, right here, and `state` is still the previous value.',
+        },
+        {
+          id: 'bail',
+          label: 'if (!Object.is(nextState, state))',
+          component: 'vanilla-core',
+          entity: 'set-fn',
+          sourcePath: 'src/vanilla.ts:73',
+          note:
+            'The bail-out. Merge and notify both live inside this `if`, so when your updater returns the current state object itself the call ends here: nothing is merged and no listener fires. Only the reference is compared, never the contents, so a fresh object with identical fields passes this check and goes on to notify everyone.',
+        },
+        {
+          id: 'merge',
+          label: `state = (replace ?? (typeof nextState !== 'object' || nextState === null)) ? (nextState as TState) : Object.assign({}, state, nextState)`,
+          component: 'vanilla-core',
+          entity: 'state',
+          sourcePath: 'src/vanilla.ts:74-78',
+          note:
+            'First `const previousState = state` keeps the old value for the listeners (src/vanilla.ts:74). Then the replace-or-merge decision: an explicit `replace` wins (`true` assigns `nextState` wholesale, `false` merges); when you passed none, a non-object or `null` `nextState` is assigned directly and an object is merged with `Object.assign({}, state, nextState)`: a new top-level object, one level deep, so a nested object you did not spread is replaced, not merged.',
+        },
+        {
+          id: 'notify',
+          label: 'listeners.forEach((listener) => listener(state, previousState))',
+          component: 'vanilla-core',
+          entity: 'listener',
+          sourcePath: 'src/vanilla.ts:79',
+          note:
+            'Notification. Every listener in the store’s `Set` is called synchronously with the new `state` and the `previousState`. There is no filtering here: the store does not know what any subscriber selected, so every subscriber hears about every change. Listeners entered this `Set` through `subscribe` (`listeners.add(listener)`, src/vanilla.ts:88-92).',
+        },
+        {
+          id: 'react-listener',
+          label: 'React.useSyncExternalStore',
+          component: 'react-bindings',
+          actor: 'react',
+          entity: 'create',
+          sourcePath: 'src/react.ts:30-34',
+          note:
+            'In a React app the listener just called is React’s. The hook that `create` returns delegates to `useStore` (`useStore(api, selector)`, src/react.ts:56), and `useStore` passes `api.subscribe` to `React.useSyncExternalStore` as its subscribe function (src/react.ts:30-31). React subscribes through it, so the callback sitting in the `listeners` Set is React’s own. zustand supplies only three functions here: `api.subscribe` and the two snapshot readers below.',
+        },
+        {
+          id: 'reselect',
+          label: 'selector(api.getState())',
+          component: 'react-bindings',
+          actor: 'react',
+          entity: 'selector',
+          sourcePath: 'src/react.ts:32',
+          note:
+            'The snapshot reader `useStore` gave React is your selector applied to the store’s current state: `React.useCallback(() => selector(api.getState()), [api, selector])` (src/react.ts:32), where `getState` is simply `() => state` (src/vanilla.ts:83). After the notification React calls it again and compares the new selection with the previous one. (A second reader, `selector(api.getInitialState())`, is passed alongside it, src/react.ts:33.)',
+        },
+        {
+          id: 'rerender',
+          label: 'return slice',
+          component: 'react-bindings',
+          actor: 'react',
+          sourcePath: 'src/react.ts:35-36',
+          note:
+            'Terminal state. When the new selection differs from the previous one, React re-renders the component and `useStore` returns the new `slice` (after `React.useDebugValue(slice)`, src/react.ts:35-36). When it is the same, the component does not re-render even though its listener was called in step 5. That is the whole render-optimization story: notification is broadcast to every subscriber; re-rendering is decided per component by comparing selections.',
+        },
+      ],
+      outro:
+        'Two rules fall out of this trace. `set` bails only on the reference your updater returns (step 3), never on contents. Notification reaches every listener (step 5), but re-rendering is decided per component by comparing selections (steps 7 and 8), which is why a narrow selector is the render optimization, and why `useShallow` (the Selectors & re-renders module) exists: it hands back the previous reference when a fresh object is shallow-equal, so the comparison can succeed.',
+    },
+  ],
+
   // ── Optional simulation: the live state ledger of one update cycle ─────────
   simulations: [
     {
@@ -657,6 +748,7 @@ const bundle = {
           id: 'rb-create',
           title: 'create = store + hook',
           blocks: [
+            { type: 'trace', traceId: 'life-of-one-set' },
             {
               type: 'prose',
               heading: 'A hook with the API stapled on',
@@ -740,7 +832,7 @@ function Controls() {
             {
               type: 'callout',
               variant: 'warning',
-              md: 'The introduction doc says zustand deals with the "zombie child", "React concurrency", and "context loss" pitfalls. Be precise about how. Context loss between mixed renderers is avoided structurally — `src/react.ts` never uses React context; the hook simply closes over its store. Zombie-child safety was hand-rolled until April 2022 (#550): zustand subscribed with useReducer + refs and re-checked state after subscribing. That code was deleted when zustand adopted `useSyncExternalStore` — React’s public API for subscribing to an external store — which now performs the subscription and the post-subscribe re-check itself; the old zombie-child regression test still passes through it. The concurrency guarantee is React’s: the repo’s docs describe the result ("safe under React concurrency") rather than implementing it.',
+              md: 'The introduction doc says zustand deals with the "zombie child", "React concurrency", and "context loss" pitfalls. Be precise about how. Context loss between mixed renderers is avoided structurally — `src/react.ts` never uses React context; the hook simply closes over its store. Zombie-child safety was hand-rolled until April 2022 (#550): zustand subscribed with useReducer + refs and re-checked state after subscribing. That code was deleted when zustand adopted `useSyncExternalStore` in April 2022 (#550, first through the `use-sync-external-store` shim; the direct `React.useSyncExternalStore` call landed in #2301, January 2024). React’s public API for subscribing to an external store now owns the subscription, and the old zombie-child regression test still passes through it. The concurrency guarantee is React’s: the repo’s docs describe the result ("safe under React concurrency") rather than implementing it.',
             },
           ],
         },
@@ -1244,7 +1336,7 @@ export const BearNames = () => {
               items: [
                 { title: 'No dependency tracking; selectors are manual', rationale: 'zustand compares selected slices by Object.is rather than tracking what you read — the comparison doc contrasts this with Valtio (property-access tracking) and Jotai/Recoil (atom dependency). Simpler and React-concurrent-safe, at the cost of you choosing slices and using useShallow when needed.', status: 'locked' },
                 { title: 'set merges one level by default', rationale: 'A pragmatic convenience so you can skip `...state` for the common case; nested updates are explicit. replace:true opts out entirely.', status: 'locked' },
-                { title: 'React binding sits on useSyncExternalStore', rationale: 'Uses React’s public external-store API; adopted in April 2022 (#550), replacing a hand-rolled useReducer + refs subscription that handled the zombie-child case by hand — React’s hook now does that work. Context loss is avoided structurally (src/react.ts never uses React context); the concurrency-safety guarantee is React’s, described in the docs rather than implemented in zustand.', status: 'locked' },
+                { title: 'React binding sits on useSyncExternalStore', rationale: 'Uses React’s public external-store API; adopted in April 2022 (#550, through the use-sync-external-store shim; direct React.useSyncExternalStore since #2301, January 2024), replacing a hand-rolled useReducer + refs subscription that handled the zombie-child case by hand — that code is gone and the zombie-child regression test passes through React’s hook. Context loss is avoided structurally (src/react.ts never uses React context); the concurrency-safety guarantee is React’s, described in the docs rather than implemented in zustand.', status: 'locked' },
                 { title: 'Middleware keep the wrapped set and api.setState in sync by convention, not by construction', rationale: 'Nothing forces a middleware to patch both. The README warns that middlewares modifying set/get are not applied to getState/setState; the shipped set-wrapping middleware (immer, persist, devtools, ssrSafe) patch api.setState on their normal paths, persist’s no-storage fallback is the one path that wraps set alone (a warning wrapper, same state semantics), and none wraps get.', status: 'open-question', sme: 'Do any of our custom middlewares wrap set without also patching api.setState?' },
               ],
             },
