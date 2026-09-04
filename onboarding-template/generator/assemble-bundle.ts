@@ -17,6 +17,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateBundle } from './validate'
 import { verifyGrounding, summarize, type FileReader } from './verify-grounding'
+import { repoRefOf } from './repo-ref'
 import { BUNDLE_SCHEMA_VERSION, type Block, type Entity, type Module, type OnboardingBundle, type QuizItem } from '../schema/bundle'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -124,19 +125,6 @@ function buildBundle(out: any, systemId: string): OnboardingBundle {
   } as OnboardingBundle
 }
 
-/** Best-effort "name@shortsha" for the verified-against badge. */
-function repoRef(repo: string): string {
-  const name = path.basename(repo)
-  try {
-    const head = readFileSync(path.join(repo, '.git', 'HEAD'), 'utf8').trim()
-    const m = head.match(/^ref:\s*(.+)$/)
-    const sha = m ? readFileSync(path.join(repo, '.git', m[1]), 'utf8').trim() : head
-    return `${name}@${sha.slice(0, 7)}`
-  } catch {
-    return name
-  }
-}
-
 /** First meaningful line of the source repo's LICENSE — embedded verbatim snippets must carry the notice. */
 function sourceLicenseOf(read: FileReader): string | undefined {
   for (const f of ['LICENSE', 'LICENSE.txt', 'LICENSE.md', 'LICENSE.rst', 'COPYING']) {
@@ -227,7 +215,7 @@ async function main() {
     const s = summarize(results)
     bundle.provenance = {
       sources: [],
-      grounding: { repoRef: repoRef(repo), verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
+      grounding: { repoRef: repoRefOf(repo), verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
       sourceLicense: sourceLicenseOf(read),
     }
     groundingLine =

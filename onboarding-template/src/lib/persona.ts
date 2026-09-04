@@ -29,6 +29,13 @@ export function visibleBlocks(blocks: Block[], audience: Audience): Block[] {
   return blocks.filter((b) => !isDeveloperOnlyBlock(b))
 }
 
+/** "name@sha" shortened for display: the record keeps the full commit id, badges show 7 chars. */
+export function shortRepoRef(ref?: string): string | undefined {
+  if (!ref) return undefined
+  const [name, sha] = ref.split('@')
+  return sha ? `${name}@${sha.slice(0, 7)}` : ref
+}
+
 /** Source permalink for a repo-relative path, tied to the verified commit when known. */
 export function sourceUrl(bundle: OnboardingBundle, filePath: string): string | undefined {
   const repo = bundle.system.repoUrl

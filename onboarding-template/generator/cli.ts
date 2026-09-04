@@ -15,6 +15,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { validateBundle } from './validate'
 import { verifyGrounding, summarize, collectOpenQuestions, type FileReader } from './verify-grounding'
+import { repoRefOf } from './repo-ref'
 import { BUNDLE_SCHEMA_VERSION, type OnboardingBundle, type Provenance } from '../schema/bundle'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -37,19 +38,6 @@ function buildProvenance(kbDir?: string): Provenance | undefined {
       lastModified: statSync(p).mtime.toISOString(),
     }))
   return sources.length ? { sources, generatorVersion: BUNDLE_SCHEMA_VERSION } : undefined
-}
-
-/** Best-effort "name@shortsha" for the verified-against badge; falls back to the dir name. */
-function repoRef(repo: string): string {
-  const name = path.basename(repo)
-  try {
-    const head = readFileSync(path.join(repo, '.git', 'HEAD'), 'utf8').trim()
-    const m = head.match(/^ref:\s*(.+)$/)
-    const sha = m ? readFileSync(path.join(repo, '.git', m[1]), 'utf8').trim() : head
-    return `${name}@${sha.slice(0, 7)}`
-  } catch {
-    return name
-  }
 }
 
 /** First meaningful line of the source repo's LICENSE — embedded verbatim snippets must carry the notice. */
@@ -116,7 +104,7 @@ async function main() {
     stamped.provenance = {
       ...(stamped.provenance ?? { sources: [] }),
       grounding: {
-        repoRef: repoRef(repo),
+        repoRef: repoRefOf(repo),
         verifiedAt: new Date().toISOString(),
         total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact,
       },

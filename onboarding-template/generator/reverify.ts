@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyGrounding, summarize, type FileReader } from './verify-grounding'
+import { repoRefOf } from './repo-ref'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -72,15 +73,6 @@ export function pinnedSha(bundle: any): string | undefined {
   return sha && sha.length >= 7 ? sha : undefined
 }
 
-function repoRefOf(repo: string): string {
-  const name = path.basename(repo)
-  try {
-    const sha = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-    return `${name}@${sha.slice(0, 7)}`
-  } catch {
-    return name
-  }
-}
 
 function main() {
   const system = arg('system')

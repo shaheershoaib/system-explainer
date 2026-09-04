@@ -1,7 +1,7 @@
 import { Link } from 'react-router'
 import { ArrowRight, BadgeCheck, CircleCheck, Clock, Lock, Map, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useBundle } from '../lib/useBundle'
-import { audienceOf, AUDIENCE_LABEL } from '../lib/persona'
+import { audienceOf, AUDIENCE_LABEL, shortRepoRef } from '../lib/persona'
 import { completedModuleIds, conceptsDue, moduleUnlocked, useProgress } from '../lib/progress'
 import { Layout } from '../components/Layout'
 import { Diagram } from '../components/diagrams/Diagram'
@@ -33,7 +33,7 @@ export function HomePage() {
           </span>
           {grounding && grounding.total > 0 && (
             <span
-              title={`${grounding.verified}/${grounding.total} code snippets verified against ${grounding.repoRef ?? 'source'}${grounding.drifted ? ` · ${grounding.drifted} drifted` : ''}`}
+              title={`${grounding.verified}/${grounding.total} code snippets verified against ${shortRepoRef(grounding.repoRef) ?? 'source'}${grounding.drifted ? ` · ${grounding.drifted} drifted` : ''}`}
               className={[
                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
                 grounding.drifted ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800',
@@ -57,7 +57,7 @@ export function HomePage() {
         </p>
         {bundle.provenance?.sourceLicense && (
           <p className="mt-1.5 text-[11px] text-muted/80">
-            Contains code excerpts from {grounding?.repoRef ?? 'the source repository'} · {bundle.provenance.sourceLicense}
+            Contains code excerpts from {shortRepoRef(grounding?.repoRef) ?? 'the source repository'} · {bundle.provenance.sourceLicense}
           </p>
         )}
       </section>
