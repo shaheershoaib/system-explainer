@@ -1,10 +1,21 @@
 {
   "name": "system-explainer",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Teaches how an unfamiliar system really works, generates an interactive onboarding course from a repo, and proves the course is true.",
-  "author": { "name": "Shaheer Shoaib" },
+  "author": {
+    "name": "Shaheer Shoaib"
+  },
   "homepage": "https://github.com/shaheershoaib/system-explainer",
   "repository": "https://github.com/shaheershoaib/system-explainer",
   "license": "Apache-2.0",
-  "keywords": ["onboarding", "codebase", "course", "verification", "teaching", "knowledge-base", "mcp", "skills"]
+  "keywords": [
+    "onboarding",
+    "codebase",
+    "course",
+    "verification",
+    "teaching",
+    "knowledge-base",
+    "mcp",
+    "skills"
+  ]
 }

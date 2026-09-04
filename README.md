@@ -6,7 +6,7 @@ system-explainer teaches how an unfamiliar software system really works, generat
 
 [**Live demo: the zustand course**](https://shaheershoaib.github.io/system-explainer/) · [**Its proof report**](onboarding-template/proof-runs/zustand/PROOF_REPORT.md) · [Install](#install) · [Architecture](docs/architecture.md)
 
-![The zustand course: system map, grounding badge, module list](docs/img/course-home.png)
+![The zustand course: the life of one set() call, grounding badge, data model, module list](docs/img/course-home.png)
 
 ## Why it exists
 
@@ -19,7 +19,7 @@ So the method is built around observation rather than recall. A grounding pass r
 | Job | What it produces | Where |
 |---|---|---|
 | **Teach** | A conversation that builds a concept-first mental model, validates it by making you restate it, stress-tests it, and grounds it in the real files, screens or endpoints. Persists a knowledge base you can commit. Works on a codebase, an API, infrastructure, or a live tool whose only "source" is a canvas or admin UI. | [`SKILL.md`](SKILL.md) |
-| **Generate** | A standalone interactive course: concept lessons, diagrams derived from the data model, quizzes built from a misconception bank, branching simulations with a live ledger, annotated real screens, spaced review, a lead dashboard. One engine, a validated data bundle per system. Hand-authored from a knowledge base, or autonomously from a cold repo in one command. | [`references/course-generation.md`](references/course-generation.md), [`onboarding-template/`](onboarding-template/) |
+| **Generate** | A standalone interactive course: "the life of one X" traced step by step as the landing hero, concept lessons, diagrams derived from the data model, syntax-highlighted verbatim code deep-linked to source, quizzes built from a misconception bank, branching simulations with a live ledger, annotated real screens, spaced review, a lead dashboard. One engine, a validated data bundle per system. Hand-authored from a knowledge base, or autonomously from a cold repo in one command. | [`references/course-generation.md`](references/course-generation.md), [`onboarding-template/`](onboarding-template/) |
 | **Prove** | A proof report on three layers: **faithful** (snippet = source, line-exact), **true** (each claim survives an adversarial refuter), **effective** (a learner who read the module beats a cold control on a hardened quiz). Plus `reverify`, which re-runs the grounding gate on every commit and fails when the repo drifts past the course. | [`onboarding-template/generator/`](onboarding-template/generator/) |
 
 ## See it: the flagship course
@@ -37,7 +37,8 @@ The proof pipeline was run on it before this release, and the run is committed u
 | 1 (course as first published) | 113 | 97 | 13 | 3 |
 | 2 | 149 | 142 | 3 | 4 |
 | 3 | 152 | 148 | 1 | 3 |
-| final | 155 | 155 | 0 | 0 |
+| 3.0.0 final | 155 | 155 | 0 | 0 |
+| 3.1.0 (an 8-step trace added to react-binding) | 184 | 184 | 0 | 0 |
 
 Every round's verdicts are kept under [`proof-runs/zustand/rounds/`](onboarding-template/proof-runs/zustand/rounds/). The classes of error the skeptic found are now an authoring checklist in the skill itself.
 
