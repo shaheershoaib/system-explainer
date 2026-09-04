@@ -25,11 +25,11 @@ The teaching agent will dispatch you with:
 - A **list of specific factual claims** they made during teaching (typically numbered)
 - The **path(s)** where the relevant code lives
 - Optional context about which claims they're most uncertain about
-- A pointer to the **context index** at `~/.claude/skills/system-explainer/references/<system>/context-index.md` if one exists
+- The absolute path of the system's **knowledge base directory** (its `context-index.md` is the context index), if one exists
 
 ## Context-index awareness
 
-**Before verifying claims, briefly check the context index** (`~/.claude/skills/system-explainer/references/<system>/context-index.md`) if one exists for this system. You're looking for:
+**Before verifying claims, briefly check the context index** (the `context-index.md` inside the knowledge base directory the teacher named) if one exists for this system. You're looking for:
 
 - Prior locked entries in `entities.md` or `learning-log.md` that bear on the claims being checked — these may serve as additional evidence (one of the claims may already have been locked in a prior session)
 - Open questions in `gotchas.md` that overlap with the claims — if the teacher just made a claim about something that's listed as an open question in gotchas.md, that's worth surfacing as a ⚠ (the teacher may have over-stated certainty about something that's actually unsettled)
