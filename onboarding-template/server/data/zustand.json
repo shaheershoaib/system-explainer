@@ -28,8 +28,7 @@
   "9fd337db-2265-48bb-a201-8ffa6a5bcb94": {
     "learnerId": "9fd337db-2265-48bb-a201-8ffa6a5bcb94",
     "learner": {
-      "name": "Shaheer Shoaib",
-      "email": "dev@example.com"
+      "name": "Demo learner"
     },
     "modules": {
       "vanilla-store": {

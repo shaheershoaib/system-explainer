@@ -31,4 +31,15 @@ npm test          # vitest (generator projection + quiz scoring + dashboard aggr
 npm run typecheck # tsc --noEmit
 ```
 
-See `../docs/specs/2026-06-16-onboarding-app-generator-design.md` for the full design.
+## Verify and ship a course
+
+```bash
+npm run generate -- --system zustand --repo /path/to/zustand   # stamps the grounding record + line ranges
+npm run reverify -- --system zustand --bundle bundles/zustand/bundle.json --repo /path/to/zustand
+npx tsx generator/proof.ts prep --system zustand --bundle bundles/zustand/bundle.json   # then the proof workflow
+npm run export                                                  # static site in dist/ (progress in localStorage)
+VITE_BASE=/system-explainer/ npm run build:pages                # same, for a GitHub Pages project site
+```
+
+See [`../docs/architecture.md`](../docs/architecture.md) for how the pieces fit, and
+[`../references/course-generation.md`](../references/course-generation.md) for the generation and proof procedure.
