@@ -1,0 +1,7 @@
+{
+  "name": "system-explainer",
+  "owner": { "name": "Shaheer Shoaib" },
+  "plugins": [
+    { "name": "system-explainer", "source": "./", "description": "Teaches how an unfamiliar system really works, generates an interactive onboarding course from a repo, and proves the course is true." }
+  ]
+}
