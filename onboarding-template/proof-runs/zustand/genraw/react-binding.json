@@ -3,118 +3,118 @@
   "items": [
     {
       "id": "g1",
-      "prompt": "After `const useBear = create(...)`, calling `useBear.getState()` from a plain module works. According to `src/react.ts` as shown in the module, what makes `getState` exist on the hook?",
+      "prompt": "The module opens by tracing one `set(updater)` call through eight hand-offs. Which sequence matches the order the trace gives for the store side (steps 2 to 5)?",
       "options": [
         {
-          "text": "`createImpl` sets the hook function's prototype to the vanilla store object, so `getState` resolves through the prototype chain on lookup.",
-          "correct": false
-        },
-        {
-          "text": "`createImpl` wraps `useStore` in a Proxy whose get trap forwards any non-call property access straight to the vanilla store API.",
-          "correct": false
-        },
-        {
-          "text": "`createImpl` calls `Object.assign(useBoundStore, api)`, copying the vanilla store's methods onto the hook function itself as own properties.",
+          "text": "The updater runs against the current `state`; `Object.is` compares its return value with `state`; `previousState` is captured and the replace-or-merge assignment runs; then every listener is called.",
           "correct": true
         },
         {
-          "text": "`createImpl` defines `getState`, `setState` and `subscribe` as closures over a `useReducer` cell that the hook allocates on first render.",
+          "text": "The updater runs against the current `state`; the replace-or-merge assignment runs; `Object.is` compares the merged result with `previousState`; every listener is called only if the two differ.",
+          "correct": false
+        },
+        {
+          "text": "The updater runs against the current `state`; `Object.is` compares its return value with `state`; every listener is called with `(nextState, state)`; then the replace-or-merge assignment runs.",
+          "correct": false
+        },
+        {
+          "text": "The updater runs against the current `state`; the replace-or-merge assignment runs; there is no store-level bail-out, so every listener is called and React's per-component comparison alone filters renders.",
           "correct": false
         }
       ],
-      "whyHard": "The README loosely says the utilities are 'attached to its prototype', so a reader who skimmed docs instead of the module's code snippet picks the prototype option; the Proxy and closure-over-useReducer options are mechanisms other libraries (and zustand's own pre-2022 hook) actually used. Only the module's `createImpl` snippet shows the plain `Object.assign`."
+      "whyHard": "The compare-after-merge sequence is the design most engineers assume (compare the final state with the previous one) and it is wrong in a way that matters: `Object.assign({}, ...)` always yields a fresh object, so a compare-after-merge could never bail out. The trace's step 3 compares the updater's RETURN VALUE with the current state before any merge, which is exactly why returning `state` itself bails and returning `{ ...state }` notifies everyone. Notify-before-assign and no-bail-out-at-all are also coherent designs; only the module fixes the order."
     },
     {
       "id": "g2",
-      "prompt": "`useStore` hands exactly three functions to `React.useSyncExternalStore`. What is the THIRD one?",
+      "prompt": "Steps 6 and 7 describe what `useStore` hands to `React.useSyncExternalStore`. Which description matches the module?",
       "options": [
         {
-          "text": "A memoized `() => selector(api.getState())`, identical to the client getter, so server and client snapshots always agree.",
-          "correct": false
-        },
-        {
-          "text": "A memoized `() => selector(api.getInitialState())`, so the server snapshot is the selector applied to the store's initial state.",
+          "text": "`api.subscribe` unchanged, plus two memoized readers, `() => selector(api.getState())` and `() => selector(api.getInitialState())`; the selector runs inside the snapshot readers.",
           "correct": true
         },
         {
-          "text": "`api.getInitialState` passed through raw, with the selector supplied separately so React applies it after reading the snapshot.",
+          "text": "`api.subscribe`, `api.getState` and `api.getInitialState` unchanged; the hook returns the whole state object and `useStore` applies `selector` to that returned value afterward.",
           "correct": false
         },
         {
-          "text": "An `undefined` placeholder, because zustand leaves server snapshots to the `persist` middleware's hydration step.",
+          "text": "A wrapped subscribe that invokes React's callback only when `selector(api.getState())` has changed, plus `api.getState` as the single snapshot reader; the selector runs in the wrapper.",
+          "correct": false
+        },
+        {
+          "text": "`api.subscribe`, a memoized `() => selector(api.getState())`, and `Object.is` passed as an `isEqual` argument; that third argument is how React decides whether the selected slice changed.",
           "correct": false
         }
       ],
-      "whyHard": "Everyone who knows useSyncExternalStore knows the third argument is getServerSnapshot; the module-specific fact is that zustand feeds it `selector(api.getInitialState())`, memoized. The raw-getInitialState-plus-separate-selector option is exactly the real shape of `useStoreWithEqualityFn` in `zustand/traditional`, and reusing `getState` is what most people assume."
+      "whyHard": "Every option is a workable binding. The `isEqual` option lifts a real parameter from `useSyncExternalStoreWithSelector`, the shim zustand actually used from #550 until #2301, so an engineer who remembers that era will reach for it. Selecting after the read, or filtering inside subscribe, are both how people build this by hand. Only the module states that BOTH snapshot readers wrap the selector and that the second one reads `getInitialState`, the server-snapshot slot."
     },
     {
       "id": "g3",
-      "prompt": "The intro doc claims zustand handles the 'zombie child' problem. Per the module, what is the CURRENT zombie-child mechanism inside `src/react.ts`?",
+      "prompt": "Step 4 of the trace is the replace-or-merge decision. For `set(nextState, replace)`, how does the module say that decision is made?",
       "options": [
         {
-          "text": "`useStore` snapshots the state in a ref before subscribing and, inside a layout effect, re-runs the listener whenever `getState()` no longer matches that pre-subscription ref.",
-          "correct": false
-        },
-        {
-          "text": "Store actions are wrapped in `unstable_batchedUpdates` so that parent and child updates caused by a single `set` are flushed together in one React commit.",
-          "correct": false
-        },
-        {
-          "text": "Listeners live in an insertion-ordered Set, so parents, which subscribe first, are always notified before children and can never observe stale props.",
-          "correct": false
-        },
-        {
-          "text": "None of its own: the useReducer-plus-refs re-check was deleted in #550 (April 2022) when `useStore` moved onto `useSyncExternalStore`, which re-checks after subscribing itself.",
+          "text": "An explicit `replace` wins (`true` assigns wholesale, `false` merges); only when it is omitted does the fallback apply: a non-object or `null` is assigned, an object is merged one level deep.",
           "correct": true
+        },
+        {
+          "text": "The type check wins outright: a non-object or `null` is always assigned wholesale; `replace` is consulted only for object values, where `true` assigns and `false` or omitted merges one level deep.",
+          "correct": false
+        },
+        {
+          "text": "An explicit `replace: true` assigns wholesale; otherwise the object is merged recursively, so a nested object you did not spread keeps its untouched keys instead of being replaced.",
+          "correct": false
+        },
+        {
+          "text": "`replace` defaults to `true` when the updater form `set(fn)` is used, since the function is expected to return the full state; the plain-object form defaults to a one-level merge.",
+          "correct": false
         }
       ],
-      "whyHard": "The second option is a faithful description of the code that actually shipped in zustand until April 2022 (`stateBeforeSubscriptionRef` plus a layout-effect re-check), so anyone who learned zustand v3 internals picks it. `unstable_batchedUpdates` is real advice in zustand's own docs, but for calling actions outside event handlers on pre-React-18, not the hook's mechanism. Only the module states the code was removed and the guarantee now comes from React."
+      "whyHard": "The two precedence variants differ only in `replace ?? typeCheck` versus `typeCheck || replace`, and the observable difference (`set(5, false)` merges into a copy of state under the real formula, becomes `5` under the swapped one) is invisible unless you read the formula quoted in step 4. Deep merge is the assumption people carry from immer-style libraries, and a replace-by-default updater form is a convention other stores really use."
     },
     {
       "id": "g4",
-      "prompt": "A teammate renders the count with `const bears = useBear.getState().bears` in the component body instead of `useBear((s) => s.bears)`. What actually happens at runtime?",
+      "prompt": "The module's warning box is precise about how zustand handles the 'zombie child' pitfall today versus in the past. Which account matches it?",
       "options": [
         {
-          "text": "It shows the right value on that render but never subscribes, so later `set` calls leave it stale until something else re-renders the component.",
+          "text": "Until April 2022 it was hand-rolled with `useReducer` plus refs that re-checked state after subscribing; #550 deleted that in favor of the `use-sync-external-store` shim, and #2301 (Jan 2024) moved to `React.useSyncExternalStore` directly.",
           "correct": true
         },
         {
-          "text": "It throws during render, because `getState` is not a hook and calling store methods in the render phase violates the rules of hooks.",
+          "text": "Until April 2022 it was hand-rolled with `useReducer` plus refs that re-checked state after subscribing; #550 deleted that and called `React.useSyncExternalStore` directly, and #2301 (Jan 2024) swapped in the `use-sync-external-store` shim for React 17.",
           "correct": false
         },
         {
-          "text": "It subscribes to the whole store object, so the component re-renders on every `set`, not only when the `bears` field itself changes.",
+          "text": "It has always been structural: `src/react.ts` never uses React context, so a subscribed child cannot read a stale value from a provider; #550 and #2301 only changed where `useSyncExternalStore` is imported from, nothing else.",
           "correct": false
         },
         {
-          "text": "It reads the frozen initial snapshot, so the count stays at its `create`-time value even after other state forces the component to re-render.",
+          "text": "Until April 2022 it relied on React's experimental `useMutableSource`; #550 replaced that with the `use-sync-external-store` shim once React 18 shipped, and #2301 (Jan 2024) moved to `React.useSyncExternalStore` directly.",
           "correct": false
         }
       ],
-      "whyHard": "The over-subscription option describes what `useBear()` with no selector really does, and the frozen-snapshot option is what `getInitialState` would do; both are real neighbors. The subtle correct behavior (fresh on any re-render, but never triggering one) is the module's own exercise and its hint that `getState` is non-reactive rather than wrong or frozen."
+      "whyHard": "All four use real identifiers. The swapped-PR account keeps the correct mechanism but reverses which PR introduced the shim and which removed it (the module gives both PR numbers and dates, and React 18 shipping two weeks before #550 makes a direct call in 2022 sound right). The context-free account is the module's explanation of a DIFFERENT pitfall, context loss, which the warning box deliberately separates from zombie children. The `useMutableSource` account borrows the RFC that the introduction doc links for concurrency."
     },
     {
       "id": "g5",
-      "prompt": "In v5, after `set` changes the store, what decides whether `BearCounter` (selecting `(s) => s.bears`) re-renders?",
+      "prompt": "`useBear` is both a hook and a handle: `useBear.getState()` works outside React. Which statement matches the module on what `create` staples onto the hook, and how?",
       "options": [
         {
-          "text": "zustand's own listener re-runs the selector, compares it with the previous slice, and calls a `forceUpdate` reducer only when they differ.",
-          "correct": false
-        },
-        {
-          "text": "React re-renders every subscribed component, then bails out during render if a shallow comparison of the selected result matches.",
-          "correct": false
-        },
-        {
-          "text": "React re-runs the selector over the fresh state and re-renders only if `Object.is` says the selected result differs from the previous one.",
+          "text": "`setState`, `getState`, `getInitialState` and `subscribe`, copied as own properties by `Object.assign(useBoundStore, api)` once the vanilla store has been built.",
           "correct": true
         },
         {
-          "text": "The store skips notifying unless `Object.is` says the whole state object changed; any component it does notify then re-renders.",
+          "text": "`setState`, `getState`, `subscribe` and `destroy`, copied as own properties by `Object.assign(useBoundStore, api)` once the vanilla store has been built.",
+          "correct": false
+        },
+        {
+          "text": "`getState`, `getInitialState` and `subscribe` only, the `ReadonlyStoreApi` subset; `setState` stays off the hook so that writes have to go through the store's actions.",
+          "correct": false
+        },
+        {
+          "text": "`setState`, `getState`, `getInitialState` and `subscribe`, inherited through the prototype because the hook is built with `Object.create(api)` rather than having them copied on.",
           "correct": false
         }
       ],
-      "whyHard": "The listener-plus-forceUpdate option is exactly how zustand's hook worked before #550, so experienced users recall it as current. The whole-state `Object.is` check is real but lives in the vanilla `setState`, and it gates notification, not re-rendering. The module states the sequence (React re-runs the selector, compares, re-renders only if changed) and names `Object.is` as the default comparison; shallow is opt-in via `useShallow` or `createWithEqualityFn`."
+      "whyHard": "The `destroy` option is the v4 surface (removed in v5 by #2235) and reads identically otherwise, so anyone whose zustand knowledge predates v5 picks it. The read-only subset mirrors the `ReadonlyStoreApi` type that appears in `useStore`'s own signature earlier in the module, so a skimmer who saw that type would pick it. Prototype inheritance is a plausible mechanism for the same four names. Only the module's snippet and its explicit list settle both WHICH four and HOW."
     }
   ]
 }

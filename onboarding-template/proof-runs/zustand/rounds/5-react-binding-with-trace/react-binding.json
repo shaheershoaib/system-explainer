@@ -1,0 +1,349 @@
+{
+  "moduleId": "react-binding",
+  "claims": [
+    {
+      "claim": "The trace's five store-side steps (1-5) live in src/vanilla.ts and its three React-binding steps (6-8) live in src/react.ts.",
+      "verdict": "supported",
+      "evidence": "Steps 1-5 cite src/vanilla.ts:66,69-72,73,74-78,79 and steps 6-8 cite src/react.ts:30-34,32,35-36; every cited line exists and contains the labelled code (byte-checked, whitespace collapsed)."
+    },
+    {
+      "claim": "The store side (src/vanilla.ts) is identical with or without React.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:1-100 contains no import at all, in particular nothing from 'react'; docs/index.md:19-20 'Works across React and vanilla ... the same API surface'."
+    },
+    {
+      "claim": "React's involvement in the trace starts at step 6.",
+      "verdict": "supported",
+      "evidence": "First React symbol in the trace is React.useSyncExternalStore at src/react.ts:30; src/vanilla.ts:66-92 (steps 1-5) references no React API."
+    },
+    {
+      "claim": "Trace step 1 label `const setState: StoreApi<TState>['setState'] = (partial, replace) => {` is a verbatim fragment of src/vanilla.ts:66.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:66 collapses to exactly the label."
+    },
+    {
+      "claim": "The `set` given to the state creator is the store's own setState, passed as the creator's first argument (createState(setState, getState, api)).",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:95 `const initialState = (state = createState(setState, getState, api))`."
+    },
+    {
+      "claim": "setState's parameters are (partial, replace).",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:66."
+    },
+    {
+      "claim": "The SetStateInternal overloads (src/vanilla.ts:1-7) make `replace` optional for the merge form and require `true` for the replace form.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:4 `replace?: false` (merge overload); src/vanilla.ts:6 `replace: true` (replace overload)."
+    },
+    {
+      "claim": "At step 1 nothing in the store has changed yet.",
+      "verdict": "supported",
+      "evidence": "The only assignment to `state` in setState is src/vanilla.ts:75-78, inside the `if` at line 73; line 66 is just the function head."
+    },
+    {
+      "claim": "Trace step 2 label `const nextState = typeof partial === 'function' ? (partial as (state: TState) => TState)(state) : partial` is a verbatim fragment of src/vanilla.ts:69-72.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:69-72 collapse to exactly the label."
+    },
+    {
+      "claim": "If `partial` is a function, setState calls it with the current state and its return value becomes nextState; otherwise `partial` itself is nextState.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:69-72."
+    },
+    {
+      "claim": "The updater runs synchronously inside setState, while `state` still holds the previous value.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:71 invokes `(partial ...)(state)` before the assignment at lines 75-78; no async boundary anywhere in setState (66-81)."
+    },
+    {
+      "claim": "Trace step 3 label `if (!Object.is(nextState, state))` is a verbatim fragment of src/vanilla.ts:73.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 is `if (!Object.is(nextState, state)) {`; the label is that line minus the trailing `{`."
+    },
+    {
+      "claim": "Merge and notify both live inside the `if (!Object.is(nextState, state))` block.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73-80: previousState capture (74), assignment/merge (75-78) and listeners.forEach (79) are all inside the if."
+    },
+    {
+      "claim": "When the updater returns the current state object itself, nothing is merged and no listener fires.",
+      "verdict": "supported",
+      "evidence": "Object.is(x, x) is true so the block at src/vanilla.ts:73-80 is skipped; tests/basic.test.tsx:459-468 'both NaN should not update' shows setState with an Object.is-equal value never calls the subscriber."
+    },
+    {
+      "claim": "Only the reference is compared at the bail-out, never the contents.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 uses Object.is, which is identity for objects; docs/reference/apis/shallow.md:88-108 shows Object.is(objectLeft, objectRight) -> false for identical-content objects.",
+      "note": "Accurate for object state. For primitive state Object.is is a value comparison (tests/basic.test.tsx:459-468: NaN vs NaN counts as equal, which `===` would not), so 'reference' is a loose word there."
+    },
+    {
+      "claim": "A fresh object with identical fields passes the bail-out check and goes on to notify every listener.",
+      "verdict": "supported",
+      "evidence": "Object.is on two distinct objects is false (docs/reference/apis/shallow.md:108), so src/vanilla.ts:75-79 run, including listeners.forEach at 79."
+    },
+    {
+      "claim": "Trace step 4 label `state = (replace ?? (typeof nextState !== 'object' || nextState === null)) ? (nextState as TState) : Object.assign({}, state, nextState)` is a verbatim fragment of the cited src/vanilla.ts:74-78.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:75-78 collapse to exactly the label; line 74 (`const previousState = state`) is the extra line in the cited range and is discussed separately in the note."
+    },
+    {
+      "claim": "`const previousState = state` (src/vanilla.ts:74) keeps the old value for the listeners.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:74 captures it; src/vanilla.ts:79 passes it as the listener's second argument."
+    },
+    {
+      "claim": "An explicit `replace` wins: `true` assigns nextState wholesale and `false` merges.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:76 `replace ?? (...)`: `??` only falls through on null/undefined, so explicit true takes line 77 and explicit false takes line 78. tests/basic.test.tsx:470-480 'can set the store without merging' covers replace=true."
+    },
+    {
+      "claim": "When `replace` is omitted, a non-object or `null` nextState is assigned directly.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:76-77 `(typeof nextState !== 'object' || nextState === null) ? (nextState as TState)`; tests/basic.test.tsx:703-727 'works with non-object state' exercises number state."
+    },
+    {
+      "claim": "When `replace` is omitted, an object nextState is merged with `Object.assign({}, state, nextState)`.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:78; docs/learn/guides/updating-state.md:9-10 'shallowly merged with the existing state'."
+    },
+    {
+      "claim": "The merge creates a new top-level object one level deep, so a nested object you did not spread is replaced rather than merged.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:78 assigns into a fresh `{}` and Object.assign copies only own top-level properties; docs/learn/guides/updating-state.md:59-91 ('Deeply nested object') requires spreading each nested level by hand."
+    },
+    {
+      "claim": "Trace step 5 label `listeners.forEach((listener) => listener(state, previousState))` is a verbatim fragment of src/vanilla.ts:79.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:79 collapses to exactly the label."
+    },
+    {
+      "claim": "Every listener in the store's Set is called synchronously with the new state and the previousState.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:64 `const listeners: Set<Listener> = new Set()`; src/vanilla.ts:79 synchronous forEach with (state, previousState); README.md:180 'fires synchronously on every change'."
+    },
+    {
+      "claim": "There is no filtering at notification: the store does not know what any subscriber selected, so every subscriber hears about every change.",
+      "verdict": "supported",
+      "evidence": "StoreApi.subscribe takes only a (state, prevState) listener (src/vanilla.ts:13); subscribe stores it raw (88-92); the forEach at 79 is unconditional.",
+      "note": "The subscribeWithSelector middleware (README.md:192-227) adds a selector-filtered subscribe, but it wraps the store from outside; the vanilla setState path stays unfiltered."
+    },
+    {
+      "claim": "Listeners enter the Set through `subscribe` (`listeners.add(listener)`, src/vanilla.ts:88-92).",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:89 `listeners.add(listener)`."
+    },
+    {
+      "claim": "Trace step 6 label `React.useSyncExternalStore` is a verbatim fragment of src/react.ts:30-34.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30 `const slice = React.useSyncExternalStore(`."
+    },
+    {
+      "claim": "The hook returned by `create` delegates to `useStore` (`useStore(api, selector)`, src/react.ts:56).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:56 `const useBoundStore: any = (selector?: any) => useStore(api, selector)`."
+    },
+    {
+      "claim": "`useStore` passes `api.subscribe` to `React.useSyncExternalStore` as its subscribe function (src/react.ts:30-31).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-31."
+    },
+    {
+      "claim": "In a React app the listener sitting in the store's `listeners` Set is React's own, because React subscribes through `api.subscribe`.",
+      "verdict": "supported",
+      "evidence": "src/react.ts contains no call to api.subscribe(, no useEffect/useLayoutEffect/useRef (grep: none); the only path is the argument at src/react.ts:31. tests/basic.test.tsx:131-164 shows components re-render after set, so a subscription was made through that path (22/22 tests pass at HEAD).",
+      "note": "Which exact callback React registers is React-internal; the repo only shows that zustand registers none of its own in useStore."
+    },
+    {
+      "claim": "zustand supplies only three functions to useSyncExternalStore: `api.subscribe` and the two snapshot readers.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:31-33 (exactly three arguments)."
+    },
+    {
+      "claim": "Trace step 7 label `selector(api.getState())` is a verbatim fragment of src/react.ts:32.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:32 `React.useCallback(() => selector(api.getState()), [api, selector]),`."
+    },
+    {
+      "claim": "The snapshot reader given to React is `React.useCallback(() => selector(api.getState()), [api, selector])` (src/react.ts:32).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:32, verbatim."
+    },
+    {
+      "claim": "`getState` is simply `() => state` (src/vanilla.ts:83).",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:83 `const getState: StoreApi<TState>['getState'] = () => state`."
+    },
+    {
+      "claim": "After the notification React calls the snapshot reader again and compares the new selection with the previous one.",
+      "verdict": "supported",
+      "evidence": "Attributed to React; the repo's docs describe the outcome: docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 'The computed selector will cause a rerender if the output has changed according to Object.is'.",
+      "note": "The re-invocation and comparison are React's mechanism (useSyncExternalStore); nothing in src/ implements them."
+    },
+    {
+      "claim": "A second reader, `selector(api.getInitialState())`, is passed alongside the first (src/react.ts:33).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:33 `React.useCallback(() => selector(api.getInitialState()), [api, selector]),`."
+    },
+    {
+      "claim": "Trace step 8 label `return slice` is a verbatim fragment of src/react.ts:35-36.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:36 `return slice`."
+    },
+    {
+      "claim": "When the new selection differs from the previous one, React re-renders the component and `useStore` returns the new slice after `React.useDebugValue(slice)` (src/react.ts:35-36).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:35-36; re-render-on-change documented at docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 and README.md:68 'Renders components only on changes'; tests/basic.test.tsx:131-164 (counterRenderCount 1 -> 2 after inc)."
+    },
+    {
+      "claim": "When the selection is the same, the component does not re-render even though its listener was called in step 5.",
+      "verdict": "supported",
+      "evidence": "tests/basic.test.tsx:131-164 'only re-renders if selected state has changed': Control selects `state.inc`, count changes, `expect(controlRenderCount).toBe(1)` (line 163); docs/learn/guides/prevent-rerenders-with-use-shallow.md:9."
+    },
+    {
+      "claim": "Notification is broadcast to every subscriber; re-rendering is decided per component by comparing selections.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:79 (unconditional broadcast) plus tests/basic.test.tsx:131-164 and docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 (per-component selection compare)."
+    },
+    {
+      "claim": "`set` bails only on the reference the updater returns, never on contents.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 `Object.is(nextState, state)` is the sole bail-out; no deep/shallow compare in setState (66-81).",
+      "note": "Same primitive-state nuance as step 3: Object.is is a value compare for primitives."
+    },
+    {
+      "claim": "Notification reaches every listener.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:79."
+    },
+    {
+      "claim": "Re-rendering is decided per component by comparing selections, which is why a narrow selector is the render optimization.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/introduction.md:58-60 'Select your state and the consuming component will re-render when that state changes'; docs/learn/guides/prevent-rerenders-with-use-shallow.md:6-9; tests/basic.test.tsx:131-164."
+    },
+    {
+      "claim": "`useShallow` hands back the previous reference when a fresh object is shallow-equal, so the selection comparison can succeed.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:6-11 `return shallow(prev.current, next) ? (prev.current as U) : (prev.current = next)`; docs/learn/guides/prevent-rerenders-with-use-shallow.md:11-12."
+    },
+    {
+      "claim": "`create` builds a vanilla store, then returns a hook.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:54 `const api = createStore(createState)`; src/react.ts:56-60 defines and returns useBoundStore."
+    },
+    {
+      "claim": "`create` copies the store's methods (setState, getState, subscribe, getInitialState) onto the hook.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:58 `Object.assign(useBoundStore, api)`; api = { setState, getState, getInitialState, subscribe } at src/vanilla.ts:94; tests/basic.test.tsx:22 'creates a store hook and api object'.",
+      "note": "README.md:170 says the utilities are attached 'to its prototype'; the code uses Object.assign (own properties). The course's wording is the accurate one."
+    },
+    {
+      "claim": "`useBear` is both a hook and a handle you can call outside React.",
+      "verdict": "supported",
+      "evidence": "UseBoundStore type is callable `& S` (src/react.ts:39-42); README.md:168-183 calls getState/subscribe/setState on the hook at module scope."
+    },
+    {
+      "claim": "No `<Provider>` is needed to use a store created with `create`.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/introduction.md:58 'without the need of providers'; README.md:63 and :443; grep of src/ for createContext|useContext returns nothing."
+    },
+    {
+      "claim": "The store is a module-level singleton you import directly.",
+      "verdict": "supported",
+      "evidence": "`create` returns a hook closing over one store instance (src/react.ts:53-61); documented usage defines it at module scope (docs/learn/getting-started/introduction.md:46-53, README.md:175).",
+      "note": "Module-level placement is the documented pattern, not enforced by code; README.md:441-458 shows an alternative where a store is created per component and passed via a user-owned context."
+    },
+    {
+      "claim": "Redux and Recoil wrap your app in a context provider (per the comparison doc).",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/comparison.md:21-22 'Redux requires your app to be wrapped in context providers; Zustand does not' and :399 'Recoil needs to wrap your app in a context provider'."
+    },
+    {
+      "claim": "`useStore` hands the store's `subscribe` and a getSnapshot (your selector applied to `getState()`) to React's `useSyncExternalStore`.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-32."
+    },
+    {
+      "claim": "React owns the subscription lifecycle; zustand just supplies the three functions.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-34 passes exactly three functions; src/react.ts has no useEffect/useLayoutEffect, no subscribe call and no unsubscribe handling of its own (grep: none).",
+      "note": "What React does with them is React's contract; the repo shows only that zustand does none of the lifecycle work itself."
+    },
+    {
+      "claim": "When `set` notifies React's listener, React re-runs your selector over the fresh state, compares the result to last time, and re-renders the component only if it changed.",
+      "verdict": "supported",
+      "evidence": "Attributed to React; repo docs describe it: docs/learn/guides/prevent-rerenders-with-use-shallow.md:9; README.md:68 'Renders components only on changes'; behavior shown by tests/basic.test.tsx:131-164.",
+      "note": "Mechanism is React's useSyncExternalStore; not implemented in src/."
+    },
+    {
+      "claim": "The default comparison of selections is `Object.is`.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/prevent-rerenders-with-use-shallow.md:9; docs/reference/hooks/use-shallow.md:271 'the default equality check is Object.is'; docs/reference/apis/create-with-equality-fn.md:49 'Defaults to Object.is'.",
+      "note": "In v5 `useStore`/`create` accept no equality function at all (src/react.ts:26-29), so this is the only behavior; a custom equality fn requires zustand/traditional."
+    },
+    {
+      "claim": "The introduction doc says zustand deals with the 'zombie child', 'React concurrency' and 'context loss' pitfalls.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/introduction.md:17-21 (same sentence in README.md:19)."
+    },
+    {
+      "claim": "Context loss between mixed renderers is avoided structurally: `src/react.ts` never uses React context; the hook simply closes over its store.",
+      "verdict": "supported",
+      "evidence": "grep of src/ for useContext|createContext: no matches; src/react.ts:53-61 closes over `api`; there is no src/context.ts at HEAD (the one #550 touched is gone)."
+    },
+    {
+      "claim": "Zombie-child safety was hand-rolled until April 2022 (#550).",
+      "verdict": "supported",
+      "evidence": "git: a34649d 'feat: use-sync-external-store (#550)' dated 2022-04-07; its parent's src/react.ts (a34649d^:src/react.ts:65-146) is a hand-written subscription hook.",
+      "note": "The repo never labels that code or any test 'zombie'; the linkage rests on README.md:19's zombie-child claim (present since v3, bd1d775 2020-08-17) and the subscription-order scenario test from #65."
+    },
+    {
+      "claim": "The pre-#550 code subscribed with useReducer + refs and re-checked state after subscribing.",
+      "verdict": "supported",
+      "evidence": "a34649d^:src/react.ts:69 `const [, forceUpdate] = useReducer(...)`, 72-77 five useRef holders, 134 `api.subscribe(listener)`, 135-137 `if (api.getState() !== stateBeforeSubscriptionRef.current) listener() // state has changed before subscription`. The re-check was introduced by 6418d36 (2020-08-23, 'fix: detect state change before subscription')."
+    },
+    {
+      "claim": "That hand-rolled code was deleted when zustand adopted useSyncExternalStore.",
+      "verdict": "supported",
+      "evidence": "a34649d diff of src/react.ts (127 lines changed) replaces the useReducer/refs/effects hook with useSyncExternalStoreWithSelector (a34649d:src/react.ts:24-31).",
+      "note": "Nuance: #550 adopted the `use-sync-external-store/shim/with-selector` package; the direct `React.useSyncExternalStore` in today's src/react.ts:30 arrived with 6c9944b '[v5]: do not depend on use-sync-external-store (#2301)' on 2024-01-20."
+    },
+    {
+      "claim": "useSyncExternalStore is React's public API for subscribing to an external store.",
+      "verdict": "supported",
+      "evidence": "Imported from the 'react' package and called as React.useSyncExternalStore (src/react.ts:1, 30) with a subscribe function plus snapshot readers (31-33).",
+      "note": "The purpose statement is React's documentation; the repo evidences only that it is a `react` export used this way."
+    },
+    {
+      "claim": "useSyncExternalStore now performs the subscription itself (zustand no longer does).",
+      "verdict": "supported",
+      "evidence": "src/react.ts has no subscribe call or effect of its own (grep: none) yet components re-render on set (tests/basic.test.tsx:131-164; 22/22 pass at HEAD)."
+    },
+    {
+      "claim": "useSyncExternalStore now performs the post-subscribe re-check itself.",
+      "verdict": "unverifiable",
+      "evidence": "React-internal behavior; nothing in src/ or docs/ implements or describes it. The only zustand test of the render-to-subscribe race ('re-renders with useLayoutEffect', added ba0396a #280) was removed in 75d0886 (#1184, 2022-08-17) as 'imperfectly working', so no current test exercises it."
+    },
+    {
+      "claim": "The old zombie-child regression test still passes through useSyncExternalStore.",
+      "verdict": "supported",
+      "evidence": "tests/basic.test.tsx:564-612 'ensures parent components subscribe before children' (added e77ab24, 2019-10-09, 'Ensure order of subscribers (#65)') is the zombie-child scenario: children select `s.childItems[id]?.text` after their ids are removed. Run at HEAD in a scratch copy: `vitest run tests/basic.test.tsx -t 'parent components subscribe before children'` -> 1 passed, exit 0; whole file 22/22 passed, exit 0.",
+      "note": "No file in the repo calls this test 'zombie'; the identification is by scenario (README.md:19 links react-redux's zombie-child definition)."
+    },
+    {
+      "claim": "The concurrency guarantee is React's: the repo's docs describe the result ('safe under React concurrency') rather than implementing it.",
+      "verdict": "supported",
+      "evidence": "docs/index.md:17-18 'Safe under React concurrency / Built to avoid zombie children and tearing issues'; grep of src/ for tearing|concurren|useMutableSource|startTransition finds only an unrelated comment at src/middleware/persist.ts:202; src/react.ts:26-37 contains no concurrency-specific code."
+    },
+    {
+      "claim": "Because the API is stapled onto the hook, you can use the store from plain modules: getState for a non-reactive read, setState to write, subscribe to react.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:58 Object.assign(useBoundStore, api); README.md:176-183 does exactly these three at module scope."
+    },
+    {
+      "claim": "The README shows using the store outside components directly.",
+      "verdict": "supported",
+      "evidence": "README.md:168-190 'Reading/writing state and reacting to changes outside of components'."
+    }
+  ]
+}
