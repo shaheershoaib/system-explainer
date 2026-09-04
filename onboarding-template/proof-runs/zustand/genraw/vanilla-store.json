@@ -1,0 +1,60 @@
+{
+  "moduleId": "vanilla-store",
+  "items": [
+    {
+      "id": "g1",
+      "prompt": "In this codebase (zustand 5.x), `createStore` builds an `api` object literal and returns it. Which list is EXACTLY the set of methods on that object, nothing more and nothing less?",
+      "options": [
+        { "text": "`setState`, `getState`, `getInitialState`, `subscribe`", "correct": true },
+        { "text": "`setState`, `getState`, `subscribe`, `destroy`", "correct": false },
+        { "text": "`setState`, `getState`, `getInitialState`, `dispatch`", "correct": false },
+        { "text": "`setState`, `getState`, `subscribe`, `getSnapshot`", "correct": false }
+      ],
+      "whyHard": "Every distractor is a real name from the same ecosystem: `destroy` was a genuine method on zustand v4 stores (removed in v5, and this repo is 5.0.15), `dispatch` is what the redux middleware adds on top of the base store, and `getSnapshot` is React's useSyncExternalStore vocabulary. `getInitialState` is the least-known real method, so an engineer who did not read the module has no anchor for which set is the base store's (src/vanilla.ts: `const api = { setState, getState, getInitialState, subscribe }`; tests/vanilla/basic.test.ts snapshot)."
+    },
+    {
+      "id": "g2",
+      "prompt": "The store holds `{ value: 1, other: 'a' }` and one listener is subscribed. You call `setState({ value: 1 })` with no second argument. What happens?",
+      "options": [
+        { "text": "The listener runs once: the guard compares the partial's reference to the current state before any merge, so a fresh object never bails out even with identical content", "correct": true },
+        { "text": "Nothing happens: the merge runs first and yields an object whose contents equal the current state, so the guard treats the update as unchanged and never notifies", "correct": false },
+        { "text": "Nothing happens: the guard shallow-compares each top-level key of the partial against the current state, finds `value` unchanged, and skips the update", "correct": false },
+        { "text": "The listener runs once, but receives the same state reference for both arguments, because merging a key that did not change returns the existing object", "correct": false }
+      ],
+      "whyHard": "It hinges on the module's step ORDER (compute -> Object.is bail-out -> merge -> notify) and on WHAT the guard compares: `Object.is(nextState, state)` runs on the raw partial, by reference, BEFORE `Object.assign({}, state, nextState)`. A smart non-reader assumes the check happens after the merge or is a shallow content compare (both give 'nothing happens'), or thinks an unchanged merge returns the old object. Verified by execution and by tests/vanilla/subscribe.test.tsx ('should be called if new state identity is different': `setState({ ...getState() })` notifies, `setState(initialState)` does not)."
+    },
+    {
+      "id": "g3",
+      "prompt": "State is `{ nested: { count: 0, label: 'x' }, other: 5 }`. You call `set((s) => ({ nested: { count: s.nested.count + 1 } }))`. What is the state afterwards?",
+      "options": [
+        { "text": "`{ nested: { count: 1 }, other: 5 }`", "correct": true },
+        { "text": "`{ nested: { count: 1, label: 'x' }, other: 5 }`", "correct": false },
+        { "text": "`{ nested: { count: 1 }, label: 'x', other: 5 }`", "correct": false },
+        { "text": "`{ nested: { count: 1, label: 'x' } }`", "correct": false }
+      ],
+      "whyHard": "Three wrong merge depths, each a real mental model: a deep/recursive merge (immer or lodash.merge style) keeps `label` inside `nested`; a reducer-style 'return the whole state' model drops `other`; a model that merges into the nested object but replaces the top level drops `other` while keeping `label`. The module's specific fact is that the merge is exactly one level via `Object.assign({}, state, next)`: top-level `other` survives, but the new `nested` object replaces the old one wholesale, so `label` is gone unless you spread `...state.nested` (docs/learn/guides/immutable-state-and-merging.md). Verified by running the source."
+    },
+    {
+      "id": "g4",
+      "prompt": "State is the object `{ a: 1 }`. Which single call leaves `getState()` returning exactly `null` afterwards?",
+      "options": [
+        { "text": "`setState(null)`, passing no second `replace` argument at all", "correct": true },
+        { "text": "`setState(null, false)`, passing an explicit `replace` of false", "correct": false },
+        { "text": "`setState({}, true)`, passing an explicit `replace` of true", "correct": false },
+        { "text": "`setState((s) => ({ ...s, a: null }))`, passing no `replace`", "correct": false }
+      ],
+      "whyHard": "Requires the module's replace decision `replace ?? (typeof next !== 'object' || next === null)`. A non-reader expects `setState(null)` to be ignored or to fall into `Object.assign` (which skips a null source and would leave `{ a: 1 }`), and does not know that an explicit `replace: false` is honored by `??` and FORCES the merge path, so `setState(null, false)` really does leave `{ a: 1 }`. `setState({}, true)` yields `{}` and the spread yields `{ a: null }`, both a plain object rather than `null`. Verified by execution and tests/vanilla/basic.test.ts ('can set the object store to null')."
+    },
+    {
+      "id": "g5",
+      "prompt": "You create `createStore(() => initial)` with `initial = { value: 1 }`, then call `setState({ value: 2 })` and later `setState({ value: 3 })`. What does `getInitialState()` return now, and what does calling it cost?",
+      "options": [
+        { "text": "The very same `initial` object reference captured when the creator ran; the state creator is never invoked again", "correct": true },
+        { "text": "A fresh `{ value: 1 }` produced by re-invoking the state creator, so each call runs your initializer one more time", "correct": false },
+        { "text": "The current state `{ value: 3 }`, because the initial snapshot is re-pointed at the newest state on every successful set", "correct": false },
+        { "text": "A structural clone of `{ value: 1 }` taken at creation time, so it is equal to `initial` but never the identical object", "correct": false }
+      ],
+      "whyHard": "The module's line `const initialState = (state = createState(setState, getState, api))` says the creator runs exactly once and the return value is stored by reference. A non-reader may model `getInitialState` as a lazy re-run (like React's `useState(() => init)`), a defensive clone, or a moving pointer to the latest state. Verified by execution (creator ran once across two calls; `getInitialState() === initial` is true after two updates) and by tests/vanilla/basic.test.ts ('can get the initial state' asserts `toBe(initial)`, i.e. reference identity)."
+    }
+  ]
+}

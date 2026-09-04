@@ -1,0 +1,154 @@
+{
+  "moduleId": "selectors-rerenders",
+  "claims": [
+    {
+      "claim": "zustand does not track which fields a component reads from the store (no property-access tracking).",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-34: useStore only evaluates selector(api.getState()) inside React.useSyncExternalStore. grep of src/ for 'new Proxy' / 'Reflect.get' finds no property-access tracking (the only 'track' hits are devtools connection bookkeeping, src/middleware/devtools.ts:119-165, and a persist hydration counter, src/middleware/persist.ts:201). docs/learn/getting-started/comparison.md:265-270 says Zustand relies on manually applied selectors rather than property-access optimization."
+    },
+    {
+      "claim": "The comparison doc contrasts zustand with Valtio, which optimizes renders through property access.",
+      "verdict": "supported",
+      "evidence": "docs/learn/getting-started/comparison.md:265-270, section 'Render Optimization (vs Valtio)': 'Valtio makes render optimizations through property access. However, with Zustand, it is recommended that you manually apply render optimizations by using selectors.'"
+    },
+    {
+      "claim": "The developer picks a slice with a selector function passed to the store hook.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:21-34 (useStore(api, selector) overload; slice = selector(api.getState())); README.md:45-56 ('Select your state and the component will re-render on changes', useBearStore((state) => state.bears))."
+    },
+    {
+      "claim": "A component re-renders only when its selected slice changes, not on every store change.",
+      "verdict": "supported",
+      "evidence": "tests/basic.test.tsx:131-164 ('only re-renders if selected state has changed'): after one inc(), Counter selecting state.count renders 2x while Control selecting state.inc renders 1x. README.md:69 ('Renders components only on changes'); README.md:78 (selecting the whole state 'will cause the component to update on every state change')."
+    },
+    {
+      "claim": "The default slice-change comparison is Object.is.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/prevent-rerenders-with-use-shallow.md:9 ('will cause a rerender if the output has changed according to Object.is'); docs/reference/hooks/use-shallow.md:271 ('the default equality check is Object.is'); docs/reference/apis/create-with-equality-fn.md:49 (defaultEqualityFn 'Defaults to Object.is').",
+      "note": "zustand's own React code performs no comparison: src/react.ts:30-34 hands selector(api.getState()) to React.useSyncExternalStore and the Object.is check is React's (React source is not in this repo; the checkout has no node_modules). README.md:86 words the same default as 'strict-equality (old === new)', which differs from Object.is only for NaN and +0/-0."
+    },
+    {
+      "claim": "Object.is amounts to strict reference equality.",
+      "verdict": "supported",
+      "evidence": "For object/array slices Object.is is identity: docs/reference/apis/shallow.md:96-110 (Object.is(objectLeft, objectRight) -> false for two structurally identical literals). README.md:86 describes the default as 'strict-equality (old === new)'.",
+      "note": "Imprecise for primitives: Object.is(NaN, NaN) is true and Object.is(0, -0) is false, unlike ===. tests/basic.test.tsx:459-467 ('both NaN should not update') relies on Object.is semantics at store level (src/vanilla.ts:73)."
+    },
+    {
+      "claim": "Narrow selectors produce fewer re-renders than broad ones.",
+      "verdict": "supported",
+      "evidence": "tests/basic.test.tsx:131-164 (component selecting an unchanged function does not re-render when count changes). README.md:78-82 (fetching everything updates on every state change) versus README.md:86-91 (atomic picks are 'efficient')."
+    },
+    {
+      "claim": "A selector that returns a newly built object or array on every call is a known problem pattern in zustand.",
+      "verdict": "supported",
+      "evidence": "docs/reference/migrations/migrating-to-v5.md:93-106 ('Requiring stable selector outputs', array-building selector example); docs/reference/hooks/use-shallow.md:269-280 (troubleshooting entry for object-bundling selectors)."
+    },
+    {
+      "claim": "Because the default comparison is Object.is on references, a freshly built object is never equal to the previous one.",
+      "verdict": "supported",
+      "evidence": "docs/reference/hooks/use-shallow.md:280 ('The wrapper object is recreated on every render, so each comparison fails'); docs/reference/apis/shallow.md:96-110 (Object.is(objectLeft, objectRight) -> false for two structurally identical literals)."
+    },
+    {
+      "claim": "With create in v5, a new-reference selector can produce an infinite update loop ending in 'Maximum update depth exceeded' rather than merely wasted renders.",
+      "verdict": "supported",
+      "evidence": "docs/reference/migrations/migrating-to-v5.md:95-112 ('There is a behavioral change in v5 to match React default behavior. If a selector returns a new reference, it may cause infinite loops' plus the quoted 'Uncaught Error: Maximum update depth exceeded' message at :111); docs/reference/hooks/use-shallow.md:269-271 ('Since v5, selectors that return a new reference on every render can trigger infinite update loops').",
+      "note": "Documented, not tested: no test under tests/ reproduces the loop (grep for 'Maximum update depth' in tests/ is empty)."
+    },
+    {
+      "claim": "This failure mode belongs to v5 create specifically, whereas createWithEqualityFn keeps the v4 behaviour.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:30-34 (v5 create/useStore uses bare React.useSyncExternalStore, no equalityFn) versus src/traditional.ts:36-42 (createWithEqualityFn uses useSyncExternalStoreWithSelector with equalityFn). git commit e247220 'v5 (#2138)' (2024-08-16) replaced useSyncExternalStoreWithSelector with useSyncExternalStore in src/react.ts and removed the equalityFn parameter; v4.5.6:src/react.ts:71-77 shows v4 create used useSyncExternalStoreWithSelector. docs/reference/migrations/migrating-to-v5.md:146 ('if you need v4 behavior, createWithEqualityFn will do')."
+    },
+    {
+      "claim": "The loop mechanism is that React re-reads the snapshot, sees a different value every time, and re-renders again.",
+      "verdict": "unverifiable",
+      "evidence": "Not observable in this repo: src/react.ts:30-34 only delegates to React.useSyncExternalStore; React's source is not in the checkout (no node_modules). The repo's own description uses different wording: docs/reference/hooks/use-shallow.md:280 says 'each comparison fails and the component re-subscribes in a loop'.",
+      "note": "The outcome (infinite loop / Maximum update depth exceeded) is documented in-repo; the internal React step sequence is not."
+    },
+    {
+      "claim": "The v5 migration guide warns that such selectors 'may cause infinite loops'.",
+      "verdict": "supported",
+      "evidence": "docs/reference/migrations/migrating-to-v5.md:96 ('If a selector returns a new reference, it may cause infinite loops.'); the exact phrase recurs at :98 and :125."
+    },
+    {
+      "claim": "The useShallow docs call bundling several values into one object 'the most common case' of the Maximum-update-depth error.",
+      "verdict": "supported",
+      "evidence": "docs/reference/hooks/use-shallow.md:269-271: under the troubleshooting heading 'I get Maximum update depth exceeded when reading multiple values from the store', the text reads 'The most common case is bundling multiple values into a single object inside the selector.'"
+    },
+    {
+      "claim": "v4 create and v5 createWithEqualityFn share the same underlying mechanism (useSyncExternalStoreWithSelector).",
+      "verdict": "supported",
+      "evidence": "v4.5.6:src/react.ts:19,71-77 (const { useSyncExternalStoreWithSelector } = useSyncExternalStoreExports; slice = useSyncExternalStoreWithSelector(api.subscribe, api.getState, ..., selector, equalityFn)); current src/traditional.ts:12,36-42 makes the same call; docs/reference/apis/create-with-equality-fn.md:13-14 ('zustand/traditional relies on useSyncExternalStoreWithSelector')."
+    },
+    {
+      "claim": "Under v4 / createWithEqualityFn a new-reference selector costs one extra re-render per store change instead of a loop.",
+      "verdict": "unverifiable",
+      "evidence": "No repo text quantifies the v4/createWithEqualityFn behaviour. grep of README.md, docs/ and tests/ for 'extra re-render' / 'one extra' / 'additional re-render' finds only docs/learn/guides/beginner-typescript.md:15 (a generic 'without extra re-renders'); the v4.5.6 docs say only 'unnecessary rerenders' (v4.5.6:docs/guides/prevent-rerenders-with-use-shallow.md:63). The memoization that would bound the cost to one re-render lives in the external use-sync-external-store package (optional peerDependency in package.json), absent from the checkout. No test in tests/basic.test.tsx renders a new-object selector through createWithEqualityFn and counts renders.",
+      "note": "docs/reference/migrations/migrating-to-v5.md:146 says only that createWithEqualityFn gives 'v4 behavior' without describing that behaviour."
+    },
+    {
+      "claim": "useShallow keeps a ref to the last slice.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:5 (const prev = React.useRef<U>(undefined)) and :10 (prev.current = next)."
+    },
+    {
+      "claim": "useShallow returns the previous slice unchanged when the new slice is shallow-equal to it.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:7-10 (const next = selector(state); return shallow(prev.current, next) ? prev.current : (prev.current = next)); tests/shallow.test.tsx:91-119 ('returns the previously computed instance when possible': expect(output2).toBe(output1))."
+    },
+    {
+      "claim": "Because the same reference is returned, the component skips the re-render.",
+      "verdict": "supported",
+      "evidence": "tests/shallow.test.tsx:121-158 ('only re-renders if selector output has changed according to shallow': setState({ a: 4 }) leaves countRenders at 1, setState({ d: 10 }) raises it to 2); docs/learn/guides/prevent-rerenders-with-use-shallow.md:11-12 and :42-63; README.md:93.",
+      "note": "The 'React sees the same reference' step is React's useSyncExternalStore contract (not in repo); the observable no-re-render outcome is tested in-repo."
+    },
+    {
+      "claim": "The comparison useShallow performs is the shallow function.",
+      "verdict": "supported",
+      "evidence": "src/react/shallow.ts:2 (import { shallow } from '../vanilla/shallow.ts') and :8 (shallow(prev.current, next)); docs/reference/hooks/use-shallow.md:39-40 ('using a shallow comparison for memoization')."
+    },
+    {
+      "claim": "shallow checks one level deep.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:22 and :39 compare entries/values with Object.is and never call shallow recursively; docs/reference/apis/shallow.md:7-9 ('identifies changes in top-level properties') and :160-162; tests/vanilla/shallow.test.tsx:35-37."
+    },
+    {
+      "claim": "The default check is Object.is, a single reference comparison.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/prevent-rerenders-with-use-shallow.md:9; docs/reference/hooks/use-shallow.md:271; docs/reference/apis/create-with-equality-fn.md:49.",
+      "note": "Same caveat as above: the check runs inside React.useSyncExternalStore, not in src/react.ts (which contains no comparison operator or equality function), and README.md:86 words the default as 'old === new'."
+    },
+    {
+      "claim": "useShallow upgrades the check to a one-level structural comparison: same keys and Object.is on each value.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:70-73 (plain objects compared via Object.entries) feeding compareEntries at :12-27 (sizes must match at :18; for every key, mapB.has(key) && Object.is(value, mapB.get(key)) at :22); tests/vanilla/shallow.test.tsx:16-28 (equal keys/values -> true; differing key sets -> false).",
+      "note": "The claim summarises the plain-object path only. shallow also short-circuits on Object.is (src/vanilla/shallow.ts:49), returns false for non-objects (:52-59), requires equal prototypes (:60-62), and has separate paths for Map/Set/iterables (:63-68, compareIterables :30-46). One consequence the summary hides: objects with no own enumerable entries compare equal, e.g. two different Dates (tests/vanilla/shallow.test.tsx:227-235, filed under 'unsupported cases')."
+    },
+    {
+      "claim": "shallow does not recurse into nested values.",
+      "verdict": "supported",
+      "evidence": "src/vanilla/shallow.ts:22 and :39 use Object.is on each value with no recursive shallow call; docs/reference/apis/shallow.md:160-162 ('It does not check nested objects or deeply nested properties. In other words, it only compares the references of the properties.')."
+    },
+    {
+      "claim": "A nested object whose identity changed still counts as different even if its contents are equal.",
+      "verdict": "supported",
+      "evidence": "tests/vanilla/shallow.test.tsx:35-37 (shallow([{ foo: 'bar' }, { asd: 123 }], [{ foo: 'bar' }, { asd: 123 }]) -> false) and :169-172 (same nested array reference -> true); docs/reference/apis/shallow.md:164-203 (nested address example -> false)."
+    },
+    {
+      "claim": "The README points to a custom equality function for control beyond shallow.",
+      "verdict": "supported",
+      "evidence": "README.md:120-127 ('For more control over re-rendering, you may provide any custom equality function' with a (oldTreats, newTreats) => compare(oldTreats, newTreats) example)."
+    },
+    {
+      "claim": "Using a custom equality function requires createWithEqualityFn because v5 create does not accept one.",
+      "verdict": "supported",
+      "evidence": "README.md:120 ('this example requires the use of createWithEqualityFn'); docs/reference/migrations/migrating-to-v5.md:28 ('The create function in v5 does not support customizing equality function'); src/react.ts:26-29 and :56 (useStore/useBoundStore take no equalityFn) versus src/traditional.ts:31-35 and :72-75 (equalityFn parameter)."
+    },
+    {
+      "claim": "createWithEqualityFn is provided by the zustand/traditional entry point.",
+      "verdict": "supported",
+      "evidence": "src/traditional.ts:82-88 (export const createWithEqualityFn); package.json exports './*' wildcard (resolves zustand/traditional to ./traditional.js and ./esm/traditional.mjs) plus the build:traditional script at package.json:74; docs/reference/migrations/migrating-to-v5.md:15,64,150 and docs/reference/apis/create-with-equality-fn.md:13-14,68 (import ... from 'zustand/traditional'); tests/basic.test.tsx:14 imports it from 'zustand/traditional'.",
+      "note": "README.md itself never names zustand/traditional; the entry name comes from the migration guide that README.md:120 links to. Using it requires installing the optional peer dependency use-sync-external-store (package.json peerDependencies; migrating-to-v5.md:15 and :58-60)."
+    }
+  ]
+}

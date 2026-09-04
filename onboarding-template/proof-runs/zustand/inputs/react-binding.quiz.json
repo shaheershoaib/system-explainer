@@ -1,0 +1,28 @@
+{
+  "moduleId": "react-binding",
+  "title": "The store as a React hook",
+  "objective": "See how `create` turns the vanilla store into a hook, how `useStore` bridges it to React via useSyncExternalStore, and why no Provider is needed.",
+  "quiz": [
+    {
+      "id": "rb-q-provider",
+      "type": "mcq",
+      "prompt": "Where do you put the `<Provider>` to make a zustand store available to components?",
+      "options": [
+        {
+          "key": "a",
+          "text": "At the app root, like Redux’s <Provider store={store}>."
+        },
+        {
+          "key": "b",
+          "text": "You don’t — the store is a module singleton you import; no Provider is required."
+        }
+      ]
+    },
+    {
+      "id": "rb-q-getstate",
+      "type": "short-answer",
+      "prompt": "Why does reading state with `store.getState()` in a component body not cause the component to re-render on changes, while `store((s) => s.x)` does?",
+      "instruction": "Answer in 1-3 sentences."
+    }
+  ]
+}

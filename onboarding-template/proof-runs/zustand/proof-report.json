@@ -1,0 +1,85 @@
+{
+  "system": "zustand",
+  "repoRef": "zustand@b57db4f86ef179285da216eeb291266da82c361c",
+  "grounding": {
+    "repoRef": "zustand@b57db4f86ef179285da216eeb291266da82c361c",
+    "verifiedAt": "2026-09-04T07:56:29.628Z",
+    "total": 17,
+    "verified": 17,
+    "partial": 0,
+    "drifted": 0,
+    "missingFile": 0,
+    "exact": 17
+  },
+  "adversarial": {
+    "total": 155,
+    "supported": 155,
+    "refuted": 0,
+    "unverifiable": 0
+  },
+  "effectiveness": {
+    "mode": "hardened-generated",
+    "taughtOverall": 1,
+    "coldOverall": 1,
+    "lift": 0,
+    "invalidRuns": [],
+    "rows": [
+      {
+        "id": "middleware-and-code",
+        "taught": 1,
+        "cold": 1,
+        "scorable": 5,
+        "taughtStatus": "ok",
+        "coldStatus": "ok",
+        "discriminating": 0,
+        "bothRight": 5,
+        "bothWrong": 0
+      },
+      {
+        "id": "react-binding",
+        "taught": 1,
+        "cold": 1,
+        "scorable": 5,
+        "taughtStatus": "ok",
+        "coldStatus": "ok",
+        "discriminating": 0,
+        "bothRight": 5,
+        "bothWrong": 0
+      },
+      {
+        "id": "selectors-rerenders",
+        "taught": 1,
+        "cold": 1,
+        "scorable": 5,
+        "taughtStatus": "ok",
+        "coldStatus": "ok",
+        "discriminating": 0,
+        "bothRight": 5,
+        "bothWrong": 0
+      },
+      {
+        "id": "vanilla-store",
+        "taught": 1,
+        "cold": 1,
+        "scorable": 5,
+        "taughtStatus": "ok",
+        "coldStatus": "ok",
+        "discriminating": 0,
+        "bothRight": 5,
+        "bothWrong": 0
+      }
+    ],
+    "courseQuiz": {
+      "taughtOverall": 0,
+      "coldOverall": 0,
+      "present": false
+    }
+  },
+  "generatedFrom": [
+    "vanilla-store",
+    "react-binding",
+    "selectors-rerenders",
+    "middleware-and-code"
+  ],
+  "manifest": true
+}

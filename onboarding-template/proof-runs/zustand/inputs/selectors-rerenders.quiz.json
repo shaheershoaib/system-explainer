@@ -1,0 +1,41 @@
+{
+  "moduleId": "selectors-rerenders",
+  "title": "Selectors & re-renders",
+  "objective": "Master the one render-performance rule in zustand: a component re-renders when its selected slice changes by Object.is — and learn when you need useShallow or a custom equality fn.",
+  "quiz": [
+    {
+      "id": "sr-q-trap",
+      "type": "mcq",
+      "prompt": "A component reads `useStore((state) => ({ a: state.a, b: state.b }))` from a v5 `create` store. As soon as it mounts, React throws \"Maximum update depth exceeded\" even though neither a nor b changes. Why, and what is the fix?",
+      "options": [
+        {
+          "key": "a",
+          "text": "You must call set with replace:true to stop the loop."
+        },
+        {
+          "key": "b",
+          "text": "The selector builds a new object each call, so Object.is is always false and the update loops until it throws; wrap it in useShallow."
+        },
+        {
+          "key": "c",
+          "text": "zustand re-renders all subscribers on every set; the loop is inherent and there is no fix."
+        }
+      ]
+    },
+    {
+      "id": "sr-q-shallow-depth",
+      "type": "mcq",
+      "prompt": "Your slice is `{ user: { name } }` and only `name` changed (a new inner object). You used `useShallow`. Does it prevent the re-render?",
+      "options": [
+        {
+          "key": "a",
+          "text": "Yes — useShallow deep-compares, so identical names mean no re-render."
+        },
+        {
+          "key": "b",
+          "text": "No — shallow only compares one level, and the inner user object is a new reference, so it counts as changed."
+        }
+      ]
+    }
+  ]
+}

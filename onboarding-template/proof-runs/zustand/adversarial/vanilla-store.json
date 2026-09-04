@@ -1,0 +1,183 @@
+{
+  "moduleId": "vanilla-store",
+  "claims": [
+    {
+      "claim": "[vs-what-b0] A zustand store holds a function-local `state` variable.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:63 `let state: TState` declared inside `createStoreImpl` (src/vanilla.ts:60); read back by `getState` at src/vanilla.ts:83."
+    },
+    {
+      "claim": "[vs-what-b0] A zustand store holds the `initialState` it started from.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:95 `const initialState = (state = createState(setState, getState, api))`; returned by `getInitialState` at src/vanilla.ts:85-86. tests/vanilla/basic.test.ts:73-78 asserts `getInitialState()` still returns the original object after a `setState`."
+    },
+    {
+      "claim": "[vs-what-b0] A zustand store holds a `Set` of listeners.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:64 `const listeners: Set<Listener> = new Set()`; Listener type at src/vanilla.ts:62."
+    },
+    {
+      "claim": "[vs-what-b0] The store exposes four methods: `setState`, `getState`, `getInitialState`, `subscribe`.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:94 `const api = { setState, getState, getInitialState, subscribe }`; `StoreApi` interface src/vanilla.ts:9-14 lists exactly those four members; tests/vanilla/basic.test.ts:31-36 inline snapshot of the returned store has exactly those four keys; docs/reference/apis/create-store.md:45-46 says the same."
+    },
+    {
+      "claim": "[vs-what-b0] The store exposes nothing else beyond those four methods.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:94-96: the `api` literal has exactly four properties and is returned unchanged (`return api as any`). `grep -rn destroy src/` finds nothing (the v4 `destroy` member is gone at version 5.0.15, package.json:6). tests/vanilla/basic.test.ts:31-36 snapshot confirms four keys.",
+      "note": "True for the bare `createStore` output. Middleware mutate or extend the same object (e.g. src/middleware/subscribeWithSelector.ts:51 reassigns `api.subscribe`; persist/devtools add members), so a middleware-wrapped store can expose more."
+    },
+    {
+      "claim": "[vs-what-b0] There is no proxy in the store implementation.",
+      "verdict": "supported",
+      "evidence": "`grep -rn -E 'Proxy' src/` returns no matches (exit 1); src/vanilla.ts:60-97 is plain closure state with no Proxy."
+    },
+    {
+      "claim": "[vs-what-b0] There is no dependency tracking in the vanilla store.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:60-97 is the entire implementation: every accepted `set` calls every listener unconditionally (src/vanilla.ts:79); no selector, access-tracking, or per-key subscription exists in the file. Slice selection is done on read in the React layer (src/react.ts:30-34) and in the `subscribeWithSelector` middleware (src/middleware/subscribeWithSelector.ts:51-60), both outside vanilla."
+    },
+    {
+      "claim": "[vs-what-b0] There is no Provider.",
+      "verdict": "supported",
+      "evidence": "`grep -rn -E 'Provider|createContext' src/` returns no matches (exit 1). src/react.ts:53-61 `create` binds a hook directly to a module-level store via `createStore`, with no context."
+    },
+    {
+      "claim": "[vs-what-b0] The React bindings are built on top of the vanilla store.",
+      "verdict": "supported",
+      "evidence": "src/react.ts:2 `import { createStore } from './vanilla.ts'`; src/react.ts:54 `const api = createStore(createState)`; src/react.ts:30-34 `useSyncExternalStore(api.subscribe, ...api.getState(), ...api.getInitialState())`; src/react.ts:58 `Object.assign(useBoundStore, api)`. src/traditional.ts:3,70 likewise imports and calls `createStore`. src/index.ts:1-2 re-exports vanilla then react."
+    },
+    {
+      "claim": "[vs-what-b0] Middleware is built on top of the vanilla store.",
+      "verdict": "supported",
+      "evidence": "All seven middleware import their types from vanilla and wrap the `StateCreator` `(set, get, api)`: src/middleware/combine.ts:1,14; src/middleware/subscribeWithSelector.ts:1,47,69; src/middleware/devtools.ts:7,190,209; src/middleware/persist.ts:5,187; src/middleware/immer.ts:3,73; src/middleware/redux.ts:1; src/middleware/ssrSafe.ts:1,15-17. Exported from src/middleware.ts:1-17."
+    },
+    {
+      "claim": "[vs-what-b1] The state is one current value.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:63 a single `let state: TState`; src/vanilla.ts:83 `getState = () => state`. The value may be any type, including primitives (tests/vanilla/basic.test.ts:140-147 number store) and `null` (tests/vanilla/basic.test.ts:122-138)."
+    },
+    {
+      "claim": "[vs-what-b1] The listeners are a Set of callbacks.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:62,64 `type Listener = (state, prevState) => void`; `const listeners: Set<Listener> = new Set()`; added/removed in `subscribe` at src/vanilla.ts:88-92."
+    },
+    {
+      "claim": "[vs-what-b1] `set` is the only thing that changes the state.",
+      "verdict": "supported",
+      "evidence": "`state` is assigned in exactly two places in src/vanilla.ts: line 75 (inside `setState`) and line 95 (the one-time initialization `state = createState(...)`). After construction, `setState` is the sole writer; `state` is closure-local and unreachable otherwise.",
+      "note": "`getState` (src/vanilla.ts:83) returns the live reference, so external code can mutate the object's contents in place without the store knowing; docs/reference/apis/create-store.md:343-351 documents that as the 'screen doesn't update' failure. That is not a store update, which is the point the claim makes."
+    },
+    {
+      "claim": "[vs-what-b1] After changing state, `set` tells the listeners.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:79 `listeners.forEach((listener) => listener(state, previousState))`, executed right after the assignment on src/vanilla.ts:75-78."
+    },
+    {
+      "claim": "[vs-what-b1] Those three things (state, listeners, set) plus the accessors are the entire engine; there is nothing more in the vanilla store.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:60-97 is the whole of `createStoreImpl`: `state` (63), `listeners` (64), `setState` (66-81), `getState` (83), `getInitialState` (85-86), `subscribe` (88-92), the `api` literal (94), initialization (95). Lines 1-58 are types only; 99-100 is the curried export."
+    },
+    {
+      "claim": "[vs-what-b3] The state creator is invoked as `createState(setState, getState, api)`.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:95 `const initialState = (state = createState(setState, getState, api))`, verbatim."
+    },
+    {
+      "claim": "[vs-what-b3] The state creator is handed `set`, `get`, and the store itself.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:95; `StateCreator` type src/vanilla.ts:33-37 names the three parameters `setState`, `getState`, `store`. tests/vanilla/basic.test.ts:15-30 snapshots the creator's args as `[Function, Function, { getInitialState, getState, setState, subscribe }]`. docs/reference/apis/create-store.md:39."
+    },
+    {
+      "claim": "[vs-what-b3] Actions colocated in state can call `set` and `get` because the creator receives them.",
+      "verdict": "supported",
+      "evidence": "tests/vanilla/basic.test.ts:47-53 (`inc: () => set((state) => ({ count: state.count + 1 }))` then `getState().inc()` yields 1) and tests/vanilla/basic.test.ts:63-70 (`getState1: () => get()`). docs/learn/guides/immutable-state-and-merging.md:13-16 shows the same pattern."
+    },
+    {
+      "claim": "[vs-set-b0] Every state update goes through `set`.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:75 is the only post-construction assignment to `state`; the variable is closure-local (src/vanilla.ts:63) with no other setter on the returned `api` (src/vanilla.ts:94).",
+      "note": "In-place mutation of the object returned by `getState` bypasses `set` but is not a store update (no new state, no notify); the course's own vs-immutable-b0 covers that case."
+    },
+    {
+      "claim": "[vs-set-b0] The body of `set` contains four steps.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:66-81: (1) compute `nextState` 69-72, (2) `if (!Object.is(nextState, state))` guard 73, (3) replace-or-merge assignment 74-78, (4) notify 79. No other statements are in the body."
+    },
+    {
+      "claim": "[vs-set-b2] Compute: if a function is passed, `set` calls it with the current state to obtain `next`.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:69-72 `const nextState = typeof partial === 'function' ? (partial as (state: TState) => TState)(state) : partial`."
+    },
+    {
+      "claim": "[vs-set-b2] Bail-out: if `Object.is(next, current)`, `set` does nothing (no merge, no notify).",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73-80: the assignment (75-78) and the notify (79) are both inside `if (!Object.is(nextState, state))`; nothing follows the block. tests/vanilla/subscribe.test.tsx:6-14 'should not be called if new state identity is the same'; tests/vanilla/basic.test.ts:99-107 `setState(NaN)` on a NaN store does not notify (Object.is, not ===). Empirical run of the verbatim logic: `set(5)` twice notified once."
+    },
+    {
+      "claim": "[vs-set-b2] Merge or replace: by default `set` shallow-merges with `Object.assign({}, state, next)`.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:78 `Object.assign({}, state, nextState)` is the fall-through branch when `replace` is omitted and `nextState` is a non-null object. docs/reference/apis/create-store.md:125 'By default, `set` function performs a shallow merge.'"
+    },
+    {
+      "claim": "[vs-set-b2] The default merge is one level deep only.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:78 uses `Object.assign`, which copies own enumerable properties one level deep. docs/learn/guides/immutable-state-and-merging.md:35 'The `set` function merges state at only one level.'"
+    },
+    {
+      "claim": "[vs-set-b2] If `replace: true` is passed, `set` assigns `next` directly with no merge.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:76-77: `(replace ?? ...) ? (nextState as TState) : ...`; with `replace === true` the condition is true and `nextState` is assigned as-is. tests/vanilla/basic.test.ts:109-120 'can set the store without merging': `setState({ b: 2 }, true)` on `{ a: 1 }` yields `{ b: 2 }`. Type overload src/vanilla.ts:6 requires a full `T` when `replace: true`."
+    },
+    {
+      "claim": "[vs-set-b2] If `replace` is omitted and `next` is a primitive or `null`, `set` assigns `next` directly with no merge.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:76: when `replace` is nullish, `??` evaluates `(typeof nextState !== 'object' || nextState === null)`, which is true for every primitive and for `null`. tests/vanilla/basic.test.ts:122-130 (`setState(null)` on an object store -> `null`), 132-138 (string store -> `null`), 140-147 (number store `c + 1` -> 2). Empirical run of the verbatim logic: `set(5)` -> state `5`; `set(null)` -> `null`.",
+      "note": "The actual predicate is slightly broader than 'primitive or null': a function-typed `next` returned from an updater is also assigned directly. Arrays are `typeof 'object'`, so `set([1, 2])` with `replace` omitted MERGES (`Object.assign({}, state, [1,2])` produced `{0:1, 1:2, ...}` in the run); the docs use `replace: true` for arrays (docs/reference/apis/create-store.md:252). Passing `replace: null` behaves like omitting it because of `??`."
+    },
+    {
+      "claim": "[vs-set-b2] An explicit `replace: false` always merges.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:76: `false ?? (...)` evaluates to `false` because `??` only falls through on `null`/`undefined`, so the `Object.assign({}, state, nextState)` branch (src/vanilla.ts:78) is always taken. Type overload src/vanilla.ts:1-5 admits `replace?: false` with a partial. Empirical run of the verbatim logic: `set(5, false)` on `{count:1}` left state as the object `{count:1}` (not `5`); `set(null, false)` likewise produced a shallow copy, not `null`.",
+      "note": "No test in the repo exercises explicit `false` with a primitive/null `next` (tests/middlewareTypes.test.tsx:44 etc. only pass objects with `false`); the primitive behavior is from the code and the empirical run."
+    },
+    {
+      "claim": "[vs-set-b2] Notify: `set` then calls every listener with `(state, prevState)`, the new state first.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:74 `const previousState = state` captured before the assignment; src/vanilla.ts:79 `listeners.forEach((listener) => listener(state, previousState))` where `state` already holds the new value (75-78). Listener signature src/vanilla.ts:13,62. tests/vanilla/subscribe.test.tsx:16-24 `toHaveBeenCalledWith(newState, prevState)`."
+    },
+    {
+      "claim": "[vs-set-b4] `set` merges only one level.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/immutable-state-and-merging.md:35 'The `set` function merges state at only one level.'; implemented by `Object.assign` at src/vanilla.ts:78."
+    },
+    {
+      "claim": "[vs-set-b4] The docs say: 'If you have a nested object, you need to merge them explicitly' and show `set((state) => ({ nested: { ...state.nested, count: state.nested.count + 1 } }))`.",
+      "verdict": "supported",
+      "evidence": "docs/learn/guides/immutable-state-and-merging.md:36 contains the sentence verbatim ('If you have a nested object, you need to merge them explicitly. You will use the spread operator pattern like so:'); docs/learn/guides/immutable-state-and-merging.md:44-46 contains the code `set((state) => ({ nested: { ...state.nested, count: state.nested.count + 1 }, }))`.",
+      "note": "Condensed quotation: the ellipsis elides 'You will use the spread operator pattern like so:', and the multi-line code block (which sits inside an `inc: () =>` action in a `create` call, lines 41-47) is collapsed to one line with its trailing comma dropped. Semantically identical."
+    },
+    {
+      "claim": "[vs-immutable-b0] Because `set` bails on `Object.is`, the reliable way to trigger an update is to return a new object.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73 guard. tests/vanilla/subscribe.test.tsx:6-14 (same reference: listener not called) vs 16-24 (`setState({ ...getState() })`: listener called). docs/reference/apis/create-store.md:434-435 'The reliable way to get the behavior you're looking for is to create a new object and pass it to `setPerson`.'"
+    },
+    {
+      "claim": "[vs-immutable-b0] Mutating the existing state in place never notifies a listener.",
+      "verdict": "supported",
+      "evidence": "The only notify site is src/vanilla.ts:79 inside `setState`, and there is no Proxy or observation of the state object (`grep -rn Proxy src/` empty), so a mutation by itself cannot notify. Passing the mutated object back to `set` hits the `Object.is` guard (src/vanilla.ts:73). docs/reference/apis/create-store.md:350 'These input fields don't work because the `oninput` handlers mutate the state'. Empirical run of the verbatim logic: `set((s) => { s.count++; return s })` mutated `count` to 1 with zero notifications.",
+      "note": "Mutating in place and THEN calling `set` with a fresh object does notify (the run: `set({})` after the mutation fired one listener), but `prevState` is then the already-mutated original, so a by-value diff sees no change. Nuance, not a contradiction."
+    },
+    {
+      "claim": "[vs-immutable-b0] When it sees the same reference, `set` returns early.",
+      "verdict": "supported",
+      "evidence": "src/vanilla.ts:73-80: `Object.is(nextState, state)` true -> the `if` body (assignment + notify) is skipped and the function ends. tests/vanilla/subscribe.test.tsx:6-14.",
+      "note": "There is no literal `return` statement; the body is a single `if` guard that falls through. 'Returns early' is a loose but accurate description of the effect."
+    },
+    {
+      "claim": "[vs-immutable-b0] The README states that state has to be updated immutably.",
+      "verdict": "supported",
+      "evidence": "README.md:31 'State has to be updated immutably and the `set` function [merges state](./docs/learn/guides/immutable-state-and-merging.md) to help it.' Also docs/learn/guides/immutable-state-and-merging.md:6 'Like with React's `useState`, we need to update state immutably.'"
+    }
+  ]
+}

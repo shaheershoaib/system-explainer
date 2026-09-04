@@ -1,0 +1,8 @@
+{
+  "round": 1,
+  "note": "first adversarial pass on the hand-authored course, before any correction; every refuted/unverifiable claim was then fixed in generator/authored/zustand.ts and the course re-proved (round 2 = the top-level run)",
+  "claims": 113,
+  "supported": 97,
+  "refuted": 13,
+  "unverifiable": 3
+}

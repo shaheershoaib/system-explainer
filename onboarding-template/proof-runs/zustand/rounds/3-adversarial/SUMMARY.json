@@ -1,0 +1,8 @@
+{
+  "round": 3,
+  "note": "third adversarial pass; one causal nit (v4 avoided the loop through snapshot memoization, not the equality function) and three attributions the repo cannot show were then reworded to what the repo states, and the three affected modules re-proved in round 4 (the top-level run)",
+  "claims": 152,
+  "supported": 148,
+  "refuted": 1,
+  "unverifiable": 3
+}

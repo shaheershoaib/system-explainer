@@ -3,4 +3,6 @@ __pycache__/
 *.pyc
 .DS_Store
 dist/
-proof-runs/
+# proof runs are per-course scratch, except the flagship run we publish as evidence
+onboarding-template/proof-runs/*
+!onboarding-template/proof-runs/zustand/

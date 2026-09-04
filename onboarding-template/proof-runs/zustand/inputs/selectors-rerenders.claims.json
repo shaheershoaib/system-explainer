@@ -1,0 +1,32 @@
+{
+  "moduleId": "selectors-rerenders",
+  "title": "Selectors & re-renders",
+  "objective": "Master the one render-performance rule in zustand: a component re-renders when its selected slice changes by Object.is — and learn when you need useShallow or a custom equality fn.",
+  "citedPaths": [
+    "README.md",
+    "docs/learn/guides/prevent-rerenders-with-use-shallow.md",
+    "src/react/shallow.ts"
+  ],
+  "claims": [
+    {
+      "id": "sr-default-b0",
+      "text": "zustand does not track which fields you read (the comparison doc contrasts this with Valtio, which optimizes renders through property access). Instead, YOU pick a slice with a selector, and zustand re-renders only when that slice changes by `Object.is` (strict reference equality). Narrow selectors = fewer re-renders."
+    },
+    {
+      "id": "sr-trap-b0",
+      "text": "The classic zustand selector bug: a selector that builds a NEW object or array every call. Because `Object.is` compares references, the new object is never equal to the last one. With `create` in v5 the consequence is worse than wasted renders: the default `Object.is` comparison fails on every check and, in the words of the useShallow docs, the component \"re-subscribes in a loop\" that ends in \"Maximum update depth exceeded\" — the v5 migration guide warns that such selectors \"may cause infinite loops\", and the useShallow docs call bundling several values into one object \"the most common case\" of that error. (Before v5, `create` memoized the selection per store snapshot, so the same selector only cost unnecessary re-renders; the v5 migration guide points at `createWithEqualityFn` from `zustand/traditional` \"if you need v4 behavior\".)"
+    },
+    {
+      "id": "sr-shallow-b0",
+      "text": "`useShallow` keeps a ref to the last slice and returns it unchanged when the new slice is shallow-equal — so React sees the same reference and skips the re-render. The comparison itself is `shallow`, which checks one level deep."
+    },
+    {
+      "id": "sr-shallow-b2",
+      "text": "Default = `Object.is` (one reference check). `useShallow` upgrades that to a one-level structural check: same keys and `Object.is` on each value. It does NOT recurse — a nested object that changed identity still counts as different."
+    },
+    {
+      "id": "sr-shallow-b3",
+      "text": "[tip] For anything beyond shallow, the README points to a custom equality function via `createWithEqualityFn` (the `zustand/traditional` entry — covered in the middleware/architecture module)."
+    }
+  ]
+}

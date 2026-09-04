@@ -1,0 +1,51 @@
+{
+  "moduleId": "middleware-and-code",
+  "title": "Middleware, the codebase & architecture",
+  "objective": "Learn the one shape every middleware shares (wrap the state creator; wrap set and/or patch the api), tour persist/devtools/immer/redux, then map every concept to the real files and the architecture so you can navigate and extend the code.",
+  "citedPaths": [
+    "src/middleware/combine.ts",
+    "src/middleware/immer.ts",
+    "src/middleware/persist.ts",
+    "docs/reference/middlewares/persist.md",
+    "src/middleware/redux.ts",
+    "README.md"
+  ],
+  "claims": [
+    {
+      "id": "mc-shape-b0",
+      "text": "A middleware takes your state creator and returns a new one. Inside, it gets `(set, get, api)` and typically wraps `set` and/or patches methods on `api`. `combine` is the gentlest example — it wraps none of them; it just merges an initial state object in front of your creator’s result and infers the types for you."
+    },
+    {
+      "id": "mc-shape-b3",
+      "text": "On their normal paths, the shipped middleware that wrap **set** also patch **api.setState**, so the raw api and the creator’s `set` agree: immer assigns `store.setState` (running function updaters through produce), persist reassigns `api.setState` (writing to storage after each change), devtools reassigns it (reporting each change to the extension), and ssrSafe swaps in a throwing setter on the server. One known exception: when persist finds no storage it wraps `set` with a warning and leaves `api.setState` alone (src/middleware/persist.ts:208-219). Beyond setState, subscribeWithSelector overwrites **api.subscribe**, persist adds **api.persist**, devtools adds **api.devtools**, and redux attaches a **dispatch** to the api. `get` reaches every middleware too, but none of the built-ins wrap it. Same skeleton, different interception point."
+    },
+    {
+      "id": "mc-persist-b0",
+      "text": "persist wraps `set` to write the (partialized) state to storage after each change, and on creation it reads storage, runs version/migrate, and **shallow-merges** the stored state over the initial state. Storage defaults to localStorage via createJSONStorage."
+    },
+    {
+      "id": "mc-persist-b3",
+      "text": "[gotcha] The default `merge` is a **shallow** merge of persisted state over current state. If you add a nested field to your store in a new release, the persisted blob can overwrite the whole nested object and drop your new defaults — pass a custom `merge` (or `migrate`) when state shape changes."
+    },
+    {
+      "id": "mc-redux-devtools-b0",
+      "text": "If you miss reducers, the `redux` middleware wires a reducer + initial state and attaches a `dispatch` to both the state and the api. `devtools` connects the store to the Redux DevTools extension and labels each change as an action — but it is not inspection-only: it replaces `api.setState` with a three-argument version that also reports to the extension, and it subscribes to the extension so RESET, ROLLBACK, JUMP_TO_STATE / JUMP_TO_ACTION and IMPORT_STATE write state back into the store through `setStateFromDevtools`. That write-back is what makes time-travel debugging work."
+    },
+    {
+      "id": "mc-redux-devtools-b2",
+      "text": "[warning] The README warns: \"middlewares that modify `set` or `get` are not applied to `getState` and `setState`.\" Take it as a rule for middleware authors: if you wrap only the `set` argument you pass to the creator and never reassign `api.setState`, the raw api will bypass your wrapper. The shipped middleware do patch `api.setState` (immer.ts, persist.ts, devtools.ts, ssrSafe.ts), so the bare `store.setState((s) => { s.count = 10 })` DOES go through immer’s draft handling — the repo’s own test asserts it (tests/immer.test.tsx). The docs’ logger example also patches `api.setState` alongside the wrapped `set` (docs/learn/guides/advanced-typescript.md)."
+    },
+    {
+      "id": "mc-redux-devtools-b4",
+      "text": "[gotcha] TypeScript gotcha (README \"TypeScript Usage\"): write `create<State>()(...)` — note the extra empty `()`. The first call is where YOU annotate the state type (the docs explain it cannot be inferred because the state generic is invariant); the second call lets TypeScript infer everything else — chiefly the middleware mutator list — because generic inference is all-or-nothing (docs/learn/guides/advanced-typescript.md, \"Why the currying\"). Without middleware, plain `create<State>((set) => ...)` types fine and the repo’s own tests use it. What fails is `create<State>(devtools(persist(...)))` with only `State` given: the mutator list defaults to `[]` and the middleware types no longer line up."
+    },
+    {
+      "id": "mc-map-b0",
+      "text": "The mental model maps cleanly onto the source. The vanilla core is the foundation; React, traditional (equality-fn) and the middleware all build on it. shallow/useShallow are the exception — a standalone equality helper (src/vanilla/shallow.ts imports nothing; src/react/shallow.ts imports only React and shallow) that you plug into selection alongside the core."
+    },
+    {
+      "id": "mc-arch-b0",
+      "text": "The vanilla core has no React dependency. React bindings and the equality-fn bindings both wrap `createStore`; shallow/useShallow plug into selection without depending on the core; middleware wraps `set` and patches the `api` (`get` is passed to every middleware, but wrapping it is an unused extension point). At the edges sit the externals: React — plus, for `zustand/traditional`, the `use-sync-external-store` shim — Immer for the immer middleware, a storage backend for persist, and the Redux DevTools extension for devtools. package.json lists react, @types/react, immer and use-sync-external-store as optional peer dependencies."
+    }
+  ]
+}
