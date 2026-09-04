@@ -1,15 +1,17 @@
 import type { Progress } from './progress-types'
 
-// Where the backend lives. Configurable per deployment; defaults to the local dev server.
+// Where the backend lives. Configurable per deployment; defaults to the local dev server in dev only.
+// A static deployment (no VITE_API_URL) has no API: progress stays in localStorage and nothing is fetched.
 export const apiBase =
-  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5175'
+  (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? 'http://localhost:5175' : undefined)
+export const hasApi = !!apiBase
 
 /**
  * Best-effort push of a learner's progress to the backend. Failures are swallowed —
  * the app stays fully usable standalone (localStorage is the client source of truth).
  */
 export async function syncProgress(systemId: string, p: Progress): Promise<boolean> {
-  if (!p.learnerId) return false
+  if (!apiBase || !p.learnerId) return false
   try {
     const res = await fetch(`${apiBase}/api/${encodeURIComponent(systemId)}/progress`, {
       method: 'POST',
@@ -31,6 +33,7 @@ export interface DashboardData {
 }
 
 export async function fetchDashboard(systemId: string, token: string): Promise<DashboardData> {
+  if (!apiBase) throw new Error('No dashboard API is configured for this deployment (set VITE_API_URL at build time).')
   const res = await fetch(`${apiBase}/api/${encodeURIComponent(systemId)}/dashboard`, {
     headers: { 'x-admin-token': token },
   })

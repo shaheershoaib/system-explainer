@@ -4,9 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "description": "System-agnostic onboarding-app engine for the system-explainer skill. Seeded per system with a content bundle (see schema/bundle.types.ts).",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:pages": "vite build && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -18,7 +22,6 @@
     "export": "vite build"
   },
   "dependencies": {
-    "@prisma/client": "^7.8.0",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
@@ -42,7 +45,6 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
     "jsdom": "^29.1.1",
-    "prisma": "^7.8.0",
     "tailwindcss": "^4.3.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",

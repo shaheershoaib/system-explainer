@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useBundle } from '../lib/useBundle'
 import { useProgress } from '../lib/progress'
-import { syncProgress } from '../lib/sync'
+import { hasApi, syncProgress } from '../lib/sync'
 
 /** Asks for a name once (so a lead can see progress), then renders the course. */
 export function LearnerGate({ children }: { children: ReactNode }) {
@@ -23,8 +23,8 @@ export function LearnerGate({ children }: { children: ReactNode }) {
       >
         <h1 className="text-lg font-semibold text-ink">Welcome to {bundle.system.name} onboarding</h1>
         <p className="mt-1 text-sm text-muted">
-          Tell us who you are so your onboarding lead can follow along. This stays on your device and syncs to the team
-          dashboard.
+          Tell us who you are so your onboarding lead can follow along.{' '}
+          {hasApi ? 'This stays on your device and syncs to the team dashboard.' : 'Your progress stays in this browser.'}
         </p>
         <label className="mt-4 block text-sm font-medium text-ink">Your name</label>
         <input
@@ -47,6 +47,13 @@ export function LearnerGate({ children }: { children: ReactNode }) {
           className="mt-5 w-full rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-accent-600 disabled:opacity-40"
         >
           Start learning
+        </button>
+        <button
+          type="button"
+          onClick={() => setLearner({ name: 'Guest' })}
+          className="mt-2 w-full rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:border-accent-300"
+        >
+          Continue as guest
         </button>
       </form>
     </div>

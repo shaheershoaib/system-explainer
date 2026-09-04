@@ -21,7 +21,7 @@ function Course() {
     }
   }, [bundle])
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <ProgressSync />
       <Routes>
         <Route path="/" element={<LearnerGate><HomePage /></LearnerGate>} />
