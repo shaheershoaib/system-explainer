@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hash, seededShuffle, buildLearnerQuiz, buildGenQuiz, collectClaims, scoreItem, scoreLearner, tallyAdversarial, renderLessons } from './proof'
+import { hash, seededShuffle, buildLearnerQuiz, buildGenQuiz, collectClaims, scoreItem, scoreLearner, tallyAdversarial, renderLessons, mergeManifestModules } from './proof'
 
 describe('seededShuffle', () => {
   it('is deterministic for a given seed and a permutation of the input', () => {
@@ -208,5 +208,19 @@ describe('tallyAdversarial', () => {
       { claims: [{ verdict: 'supported' }, { verdict: 'unverifiable' }, { verdict: 'supported' }] },
     ] as any)
     expect(t).toMatchObject({ total: 5, supported: 3, refuted: 1, unverifiable: 1 })
+  })
+})
+
+describe('mergeManifestModules', () => {
+  const order = ['a', 'b', 'c', 'd']
+  it('keeps the rest of the run when one module is re-prepped', () => {
+    expect(mergeManifestModules(['a', 'b', 'c', 'd'], ['b'], order)).toEqual(['a', 'b', 'c', 'd'])
+  })
+  it('adds a newly scoped module to an existing run, in bundle order', () => {
+    expect(mergeManifestModules(['a'], ['c'], order)).toEqual(['a', 'c'])
+    expect(mergeManifestModules([], ['d', 'b'], order)).toEqual(['b', 'd'])
+  })
+  it('drops ids the bundle no longer has', () => {
+    expect(mergeManifestModules(['zz', 'a'], ['b'], order)).toEqual(['a', 'b'])
   })
 })
