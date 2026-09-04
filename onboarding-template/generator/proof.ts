@@ -335,6 +335,17 @@ const AGENT_OUTPUT_FILES = (id: string) => [
   `learner-gen-cold/${id}.json`,
 ]
 
+/**
+ * The module list a run's manifest should carry after a prep. A scoped re-prep (`--modules a`)
+ * of one module inside a multi-module run must NOT shrink the run to that module: the fix-one-
+ * module-and-re-prove loop is the normal operation, and `report` reads only manifest modules.
+ * Union of the existing manifest and the freshly prepped ids, in bundle order, unknown ids dropped.
+ */
+export function mergeManifestModules(existing: string[], prepped: string[], bundleOrder: string[]): string[] {
+  const keep = new Set([...existing, ...prepped])
+  return bundleOrder.filter((id) => keep.has(id))
+}
+
 function readManifest(dir: string): { modules: string[]; preppedAt?: string } | null {
   return readJSON(path.join(dir, 'manifest.json'))
 }
@@ -367,9 +378,12 @@ function prep() {
   }
   // The manifest is the single source of truth for which modules belong to THIS run;
   // report() reads only these, so leftovers from earlier differently-scoped runs are inert.
-  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ system, preppedAt: new Date().toISOString(), modules: mods.map((m) => m.id) }, null, 2))
+  // A scoped prep (--modules) merges into the existing run; an unscoped prep resets it.
+  const prevModules = only ? readManifest(dir)?.modules ?? [] : []
+  const runModules = mergeManifestModules(prevModules, mods.map((m) => m.id), (bundle.modules as any[]).map((m) => m.id))
+  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ system, preppedAt: new Date().toISOString(), modules: runModules }, null, 2))
   console.log(`✓ prepped ${mods.length} module(s) → ${path.relative(root, dir)}`)
-  console.log(`  modules: ${mods.map((m) => m.id).join(', ')}`)
+  console.log(`  modules: ${mods.map((m) => m.id).join(', ')}${runModules.length !== mods.length ? ` (run manifest now covers ${runModules.length}: ${runModules.join(', ')})` : ''}`)
   if (invalidated) console.log(`  invalidated ${invalidated} stale agent output(s) from prior runs of these modules`)
   const claimCount = mods.reduce((n, m) => n + collectClaims(m).length, 0)
   console.log(`  ${claimCount} claim block(s) for adversarial verify · learner quizzes stripped + shuffled · manifest.json written`)
