@@ -62,7 +62,11 @@ export function Diagram({ dref }: { dref: DiagramRef }) {
       {dref.title && (
         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">{dref.title}</div>
       )}
-      {body}
+      {/* Node text stays legible on narrow screens: the diagram keeps a minimum width and the
+          wrapper scrolls sideways instead of shrinking a wide layout to a thumbnail. */}
+      <div className="overflow-x-auto">
+        <div className={dref.kind === 'flow' ? undefined : 'min-w-[36rem]'}>{body}</div>
+      </div>
     </div>
   )
 }

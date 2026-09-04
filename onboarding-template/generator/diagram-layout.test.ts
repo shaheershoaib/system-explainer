@@ -1,6 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { layoutEr, layoutContext, type DiagramLayout } from './diagram-layout'
+import path from 'node:path'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import {
+  layoutEr,
+  layoutContext,
+  orderRanksByBarycenter,
+  countCrossings,
+  placeEdgeBadges,
+  type DiagramLayout,
+  type Pt,
+} from './diagram-layout'
 import type { Entity, Actor } from '../schema/bundle'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
 
 const overlaps = (
   a: { x: number; y: number; w: number; h: number },
@@ -156,5 +169,124 @@ describe('layoutContext', () => {
   it('handles a small actor set without overlaps', () => {
     const l = layoutContext('Tiny', actors.slice(0, 3))
     assertNoOverlaps(l)
+  })
+})
+
+/** The entities the HomePage system map renders for the zustand course (its scope rule, verbatim). */
+function zustandErEntities(): Entity[] {
+  const file = path.resolve(here, '..', 'bundles', 'zustand', 'bundle.json')
+  const bundle = JSON.parse(readFileSync(file, 'utf8')) as { entities: Entity[] }
+  const related = bundle.entities.filter((e) => (e.relationships?.length ?? 0) > 0)
+  const scope =
+    bundle.entities.length <= 18
+      ? bundle.entities.map((e) => e.id)
+      : [...new Set(related.flatMap((e) => [e.id, ...(e.relationships ?? []).map((r) => r.to)]))]
+  return bundle.entities.filter((e) => scope.includes(e.id))
+}
+
+describe('orderRanksByBarycenter', () => {
+  it('reorders the lower rank so the crossing disappears, without mutating its input', () => {
+    const ranks = [['a', 'b'], ['x', 'y']]
+    const edges: Array<[string, string]> = [['a', 'y'], ['b', 'x']]
+    expect(orderRanksByBarycenter(ranks, edges)).toEqual([['a', 'b'], ['y', 'x']])
+    expect(ranks).toEqual([['a', 'b'], ['x', 'y']])
+  })
+
+  it('keeps nodes without neighbours in their slot and preserves the order of ties (stable)', () => {
+    const ranks = [['a', 'b'], ['lonely', 'x', 'y', 'z']]
+    // x and y both hang off b (a tie); z hangs off a; lonely touches nothing in rank 0
+    const edges: Array<[string, string]> = [['b', 'x'], ['y', 'b'], ['a', 'z']]
+    expect(orderRanksByBarycenter(ranks, edges)).toEqual([['a', 'b'], ['lonely', 'z', 'x', 'y']])
+  })
+})
+
+describe('countCrossings', () => {
+  const node = (id: string, x: number, y: number) => ({ id, label: id, x, y, w: 10, h: 10, kind: 'entity' as const })
+  const er = (from: string, to: string) => ({ from, to, variant: 'er' as const })
+
+  it('counts one crossing for an X between two rows and none once it is untangled', () => {
+    const crossed: DiagramLayout = {
+      width: 100,
+      height: 100,
+      nodes: [node('a', 0, 0), node('b', 50, 0), node('x', 0, 50), node('y', 50, 50)],
+      edges: [er('a', 'y'), er('b', 'x')],
+    }
+    expect(countCrossings(crossed)).toBe(1)
+    const straight = { ...crossed, edges: [er('a', 'x'), er('b', 'y')] }
+    expect(countCrossings(straight)).toBe(0)
+  })
+
+  it('ignores reference-lane nodes and edges within one row', () => {
+    const layout: DiagramLayout = {
+      width: 100,
+      height: 100,
+      nodes: [node('a', 0, 0), node('b', 50, 0), { ...node('ref', 100, 0), isReferenceData: true }, node('x', 0, 50)],
+      edges: [er('a', 'b'), er('a', 'ref'), er('b', 'ref'), er('b', 'x')],
+    }
+    expect(countCrossings(layout)).toBe(0)
+  })
+})
+
+describe('layoutEr crossing reduction', () => {
+  const cases: Array<[string, Entity[]]> = [
+    ['chain fixture', chain],
+    ['zustand bundle entities', zustandErEntities()],
+  ]
+  for (const [name, ents] of cases) {
+    const before = countCrossings(layoutEr(ents, { orderRanks: false }))
+    const after = countCrossings(layoutEr(ents))
+    it(`${name}: ordered layout crosses ${after} times vs ${before} unordered (must not be more)`, () => {
+      console.log(`[er crossings] ${name}: unordered=${before} ordered=${after}`)
+      expect(after, `${name}: crossings unordered=${before} ordered=${after}`).toBeLessThanOrEqual(before)
+    })
+  }
+
+  it('still lays out every zustand entity once, in bounds, with no overlaps', () => {
+    const ents = zustandErEntities()
+    const l = layoutEr(ents)
+    expect(l.nodes).toHaveLength(ents.length)
+    assertInBounds(l)
+    assertNoOverlaps(l)
+  })
+
+  it('is deterministic: two calls produce identical layouts', () => {
+    const ents = zustandErEntities()
+    expect(layoutEr(ents)).toEqual(layoutEr(ents))
+    expect(layoutEr(chain)).toEqual(layoutEr(chain))
+  })
+})
+
+describe('placeEdgeBadges', () => {
+  const edge: [Pt, Pt] = [{ x: 0, y: 0 }, { x: 200, y: 0 }]
+
+  it('puts a lone badge at the midpoint of its edge', () => {
+    expect(placeEdgeBadges([edge])).toEqual([{ x: 100, y: 0 }])
+  })
+
+  it('slides a later badge along its edge when two centers would sit closer than minDist', () => {
+    const [first, second] = placeEdgeBadges([edge, edge])
+    expect(first).toEqual({ x: 100, y: 0 })
+    expect(Math.hypot(second.x - first.x, second.y - first.y)).toBeGreaterThanOrEqual(22)
+    expect(second.x).toBeGreaterThanOrEqual(70 - 1e-9) // t stays within 0.35..0.65
+    expect(second.x).toBeLessThanOrEqual(130 + 1e-9)
+  })
+
+  it('moves off an obstacle box when the edge has a clear spot', () => {
+    const [p] = placeEdgeBadges([edge], { obstacles: [{ x: 90, y: -10, w: 20, h: 20 }] })
+    expect(p.x > 90 && p.x < 110).toBe(false)
+  })
+
+  it('slides past t = 0.35 / 0.65 when the edge runs straight through a node box', () => {
+    // a 168-wide node centered on the midpoint of a 400-long edge swallows t in 0.29..0.71
+    const long: [Pt, Pt] = [{ x: 0, y: 0 }, { x: 400, y: 0 }]
+    const [p] = placeEdgeBadges([long], { obstacles: [{ x: 116, y: -32, w: 168, h: 64 }] })
+    expect(p.x > 116 && p.x < 284).toBe(false)
+    expect(p.x).toBeGreaterThanOrEqual(80 - 1e-9) // never closer to an endpoint than t = 0.2
+    expect(p.x).toBeLessThanOrEqual(320 + 1e-9)
+  })
+
+  it('is deterministic', () => {
+    const edges: Array<[Pt, Pt]> = [edge, edge, [{ x: 0, y: 0 }, { x: 0, y: 200 }]]
+    expect(placeEdgeBadges(edges)).toEqual(placeEdgeBadges(edges))
   })
 })
