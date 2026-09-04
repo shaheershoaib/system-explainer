@@ -1,0 +1,85 @@
+# v3 release design, decision D9: a verifier whose own repo has no CI is not credible.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gates:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    defaults:
+      run:
+        working-directory: onboarding-template
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: onboarding-template/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Knowledge-base MCP server tests
+        working-directory: .
+        run: node --test mcp/teaching-knowledge-base/test/*.test.js
+
+      - name: PreCompact hook syntax check
+        working-directory: .
+        run: bash -n hooks/pre-compact-teaching-snapshot.sh
+
+  # This job is what keeps the "verified against zustand@<sha>" badge honest: it re-runs the grounding gate against the exact pinned commit, so a claim that no longer matches upstream turns the build red instead of rotting silently.
+  flagship-grounding:
+    name: Flagship course grounding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: onboarding-template/package-lock.json
+
+      - name: Read the pinned upstream commit from the bundle
+        id: pin
+        run: |
+          sha="$(node -e "const b=require('./onboarding-template/bundles/zustand/bundle.json'); process.stdout.write(b.provenance.grounding.repoRef.split('@')[1])")"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch exactly that commit of pmndrs/zustand (no history)
+        env:
+          SHA: ${{ steps.pin.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The bundle pins an abbreviated sha; git can only fetch a commit by its full object id.
+          if [ "${#SHA}" -lt 40 ]; then
+            SHA="$(gh api "repos/pmndrs/zustand/commits/$SHA" --jq .sha)"
+          fi
+          git init "$GITHUB_WORKSPACE/zustand"
+          git -C "$GITHUB_WORKSPACE/zustand" remote add origin https://github.com/pmndrs/zustand.git
+          git -C "$GITHUB_WORKSPACE/zustand" fetch --depth 1 origin "$SHA"
+          git -C "$GITHUB_WORKSPACE/zustand" checkout --quiet FETCH_HEAD
+
+      - run: npm ci
+        working-directory: onboarding-template
+
+      - name: Re-verify the flagship bundle against its pinned commit
+        working-directory: onboarding-template
+        run: npm run reverify -- --system zustand --bundle bundles/zustand/bundle.json --repo "$GITHUB_WORKSPACE/zustand"
