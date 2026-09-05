@@ -1,0 +1,61 @@
+# Example: keep a repository's onboarding course honest in CI with the two-speed gate.
+#
+# Free half, every push and PR:   `system-explainer reverify` re-checks every cited snippet
+#                                  against HEAD (no API call, seconds). Drift fails the build.
+# Paid half, merges to main only:  `system-explainer prove --affected` re-runs the adversarial
+#                                  skeptics and the taught-vs-cold learners, but ONLY for the
+#                                  modules whose cited files changed since the course was pinned.
+#                                  Nothing changed -> no agent runs -> no spend.
+#
+# Copy this file into your repo's .github/workflows/, commit the course under
+# .system-explainer/ (produced by `npx system-explainer course .`), and add the
+# ANTHROPIC_API_KEY secret. Adjust the branch name and the Node version to taste.
+name: Onboarding course
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  reverify:
+    name: Course grounding (free)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # reverify diffs HEAD against the commit the course was verified at; a shallow clone cannot.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx --yes system-explainer reverify .
+
+  prove-affected:
+    name: Course proof (scoped, paid)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: reverify
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Re-prove only the modules whose sources changed
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # exit 2 = a claim was refuted; the report under .system-explainer/proof-runs/ says which.
+        run: npx --yes system-explainer prove . --affected --json | tee prove.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: proof-report
+          path: |
+            .system-explainer/proof-runs/**/PROOF_REPORT.md
+            prove.log

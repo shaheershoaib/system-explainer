@@ -71,17 +71,29 @@ The skill will configure a knowledge base, build a mental model with you, make y
 
 ### Generate a course from a repo
 
-In Claude Code, inside the repo:
+From any terminal, with your own Anthropic API key (bring your own key; nothing is proxied):
 
-> Course this repo for new developers.
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+npx system-explainer course /path/to/repo      # enumerate, data model, author, verify, critic; assemble + grounding gate
+npx system-explainer serve /path/to/repo       # the course at http://localhost:4173
+```
 
-The skill runs the autonomous loop (enumerate domains, extract the data model, author a module per domain, verify every snippet against source, check completeness), assembles and validates the bundle, and runs the proof workflow. The course lands as `bundle.json`; `npm run export` in the engine turns it into a static site anyone can open.
+The loop enumerates domains, extracts the data model, authors one module per domain, verifies every snippet against source (self-healing drift), and re-runs a completeness critic until nothing is missing. Everything lands under `<repo>/.system-explainer/` (the bundle, the viewer, transcripts). Defaults: `claude-opus-5` at high effort; `--model`, `--effort`, `--concurrency` tune cost; the run prints token totals and an estimated cost at the end.
+
+Inside Claude Code the same loop runs as a Workflow when you ask "Course this repo for new developers"; the CLI is the same pipeline without the Claude Code runtime.
 
 ### Prove a course
 
-> Prove the course. Refute anything you can.
+```bash
+npx system-explainer prove /path/to/repo               # skeptics per module, hardened quiz, taught vs cold learners
+npx system-explainer prove /path/to/repo --affected    # only modules whose cited files changed since the course was pinned
+npx system-explainer reverify /path/to/repo            # free: re-check every snippet against HEAD, no API call
+```
 
-Produces `proof-runs/<system>/PROOF_REPORT.md` with the three layers above and an explicit list of the claims that did not survive.
+`prove` writes `.system-explainer/proof-runs/<system>/PROOF_REPORT.md` with the three layers above and an explicit list of the claims that did not survive; it exits 2 when a claim is refuted, so CI can gate on it. [`docs/ci/course-proof.yml`](docs/ci/course-proof.yml) is the two-speed gate ready to copy: `reverify` on every push (seconds, free), scoped `prove --affected` on merge (spends only on what changed).
+
+No key handy? `npx system-explainer smoke` runs the whole pipeline offline against a bundled fixture with a scripted model, so you can see every stage and artifact before spending anything.
 
 ### Run the engine locally
 
@@ -90,7 +102,7 @@ cd onboarding-template
 npm install
 npm run generate -- --system zustand --repo /path/to/zustand   # bundle + grounding record
 npm run dev                                                    # the course at http://localhost:5174
-npm test && npm run typecheck                                  # 111 tests
+npm test && npm run typecheck                                  # 178 tests
 ```
 
 ## Install

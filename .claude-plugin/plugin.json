@@ -1,6 +1,6 @@
 {
   "name": "system-explainer",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Teaches how an unfamiliar system really works, generates an interactive onboarding course from a repo, and proves the course is true.",
   "author": {
     "name": "Shaheer Shoaib"
