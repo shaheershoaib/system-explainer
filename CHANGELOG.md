@@ -2,6 +2,17 @@
 
 The living instructions are in [`SKILL.md`](SKILL.md) and [`references/course-generation.md`](references/course-generation.md); this file is the record of how they got here. Versions before 3.0.0 were developed privately; their entries are condensed.
 
+## 3.2.0 (2026-09-04): the CLI, bring your own key
+
+Decisions D20 to D27 in the design record. The course loop and the proof loop no longer need Claude Code's Workflow runtime: `npx system-explainer course <repo>` and `prove <repo>` run them from any terminal or CI job against the Anthropic API with the user's own key.
+
+- **`system-explainer` on npm** (the engine package, renamed from `onboarding-template`): `course`, `prove`, `reverify`, `serve`, `smoke`. Output lives under `<repo>/.system-explainer/` (bundle, proof runs, a static copy of the viewer for `serve`). `--model` (default `claude-opus-5`), `--model-learner`, `--effort`, `--concurrency`, `--rounds`, `--modules`, `--affected`, `--json`; token totals and an estimated cost print after every run.
+- **A manual tool-use loop** (`generator/llm/`): streaming calls with `maxRetries` 3 and a 10-minute timeout, a strict `submit_result` tool per role so every artifact is schema-valid by construction, turn and wall-clock caps, typed error classification, one JSON log line per agent run.
+- **Sandboxed tools instead of a shell**: `list_dir`, `read_file`, `search` (ripgrep or a JS fallback), `git_log`, `git_show`, all read-only and path-checked against the target repo; `write_file` only under the run's work directory. Agents never get bash.
+- **An offline scripted model** plays every role with repo-derived, schema-valid answers, so `smoke` and the test suite exercise orchestration, sandboxing, the disk bus, assembly, prep, and the report without an API key. This is also how the CLI was verified before release: no live run happened in the build environment, the first live run is the maintainer's.
+- **The proof harness is callable**: `prep`, `genprep`, `report`, `reverify` are exported functions with return values; the argv wrappers are unchanged.
+- **CI example, not enforcement**: [`docs/ci/course-proof.yml`](docs/ci/course-proof.yml) shows the two-speed gate (`reverify` on push, `prove --affected` on merge). This repo's own CI runs the free half plus `smoke`.
+
 ## 3.1.0 (2026-09-04): the polish a first visitor notices
 
 Decisions D13 to D19 in the design record. Nothing here changes what the tool proves; all of it changes whether someone who lands on the demo stays.

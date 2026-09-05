@@ -36,6 +36,12 @@ jobs:
 
       - run: npm run build
 
+      - name: Build the CLI bundle
+        run: npm run build:cli
+
+      - name: CLI smoke (course, prove, reverify offline against the bundled fixture)
+        run: node bin/system-explainer.mjs smoke
+
       - name: Knowledge-base MCP server tests
         working-directory: .
         run: node --test mcp/teaching-knowledge-base/test/*.test.js
