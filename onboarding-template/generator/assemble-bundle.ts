@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateBundle } from './validate'
-import { verifyGrounding, summarize, type FileReader } from './verify-grounding'
+import { verifyGrounding, summarize, type FileReader, type GroundingSummary } from './verify-grounding'
 import { repoRefOf } from './repo-ref'
 import { BUNDLE_SCHEMA_VERSION, type Block, type Entity, type Module, type OnboardingBundle, type QuizItem } from '../schema/bundle'
 
@@ -178,27 +178,46 @@ export function readWorkDir(dir: string): any {
     modules,
   }
 }
+export interface AssembleOptions {
+  /** Disk-bus work directory (plan.json + datamodel.json + modules/*.json); preferred. */
+  dir?: string
+  /** Legacy single combined JSON, used when `dir` is absent. */
+  inPath?: string
+  /** Bundle id: names bundles/<system>/bundle.json. */
+  system: string
+  /** Repo to run the grounding gate against; omitted -> no grounding record. */
+  repo?: string
+  /** Optional extra copy of the bundle for the user's workspace (the CLI's --out). */
+  out?: string
+  /** Engine directory receiving bundles/<system>/bundle.json + public/bundle.json (default: this package). */
+  root?: string
+}
+export interface AssembleResult {
+  bundle: OnboardingBundle
+  grounding?: GroundingSummary
+  outPath: string
+}
 
-async function main() {
-  const inPath = arg('in')
-  const dirPath = arg('dir')
-  const system = arg('system')
-  const repo = arg('repo')
-  if ((!inPath && !dirPath) || !system) {
-    console.error('Usage: npm run assemble -- (--dir <workDir> | --in <loop-output.json>) --system <id> [--repo <repo-path>] [--out <dir>]')
-    process.exit(1)
-  }
-  const out = dirPath ? readWorkDir(path.resolve(dirPath)) : JSON.parse(readFileSync(inPath!, 'utf8'))
-  const bundle: any = buildBundle(out, system)
+/** An expected failure: its message is the exact text the CLI prints before exiting 1. */
+export class AssembleError extends Error {}
+
+/**
+ * The deterministic back half as a function: read the work directory (or legacy JSON), map to the
+ * bundle contract, run the real grounding gate, validate, write. Throws AssembleError instead of
+ * exiting so a caller (runCourse, tests) can decide.
+ */
+export function assemble(o: AssembleOptions): AssembleResult {
+  const base = o.root ? path.resolve(o.root) : root
+  if (!o.dir && !o.inPath) throw new AssembleError('assemble: one of dir or inPath is required')
+  const out = o.dir ? readWorkDir(path.resolve(o.dir)) : JSON.parse(readFileSync(o.inPath!, 'utf8'))
+  const bundle: any = buildBundle(out, o.system)
   bundle.generatedAt = new Date().toISOString()
 
   // — Grounding gate: the authoritative snippet-vs-source check (independent of the loop) —
-  let groundingLine = ''
+  let grounding: GroundingSummary | undefined
+  const repo = o.repo
   if (repo) {
-    if (!existsSync(repo)) {
-      console.error(`✗ --repo not found: ${repo}`)
-      process.exit(1)
-    }
+    if (!existsSync(repo)) throw new AssembleError(`✗ --repo not found: ${repo}`)
     const read: FileReader = (sp) => {
       const fp = path.join(repo, sp)
       return existsSync(fp) ? readFileSync(fp, 'utf8') : null
@@ -218,44 +237,65 @@ async function main() {
       grounding: { repoRef: repoRefOf(repo), verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
       sourceLicense: sourceLicenseOf(read),
     }
-    groundingLine =
-      `  grounding: ${s.verified}/${s.total} verified` +
-      (s.exact ? `, ${s.exact} exact-verbatim` : '') +
-      (s.partial ? `, ${s.partial} partial` : '') +
-      (s.drifted ? `, ${s.drifted} DRIFTED ⚠` : '') +
-      (s.missingFile ? `, ${s.missingFile} missing-file ⚠` : '') +
-      (s.noSource ? `, ${s.noSource} ungrounded` : '')
+    grounding = s
   }
 
   const result = validateBundle(bundle)
-  if (!result.ok) {
-    console.error(`✗ assembled bundle failed validation (${result.errors.length}):`)
-    for (const e of result.errors) console.error('   • ' + e)
-    process.exit(1)
-  }
+  if (!result.ok) throw new AssembleError([`✗ assembled bundle failed validation (${result.errors.length}):`, ...result.errors.map((e) => '   • ' + e)].join('\n'))
 
-  const outDir = path.join(root, 'bundles', system)
+  const json = JSON.stringify(result.bundle, null, 2)
+  const outDir = path.join(base, 'bundles', o.system)
   mkdirSync(outDir, { recursive: true })
-  writeFileSync(path.join(outDir, 'bundle.json'), JSON.stringify(result.bundle, null, 2))
-  const pub = path.join(root, 'public')
+  const outPath = path.join(outDir, 'bundle.json')
+  writeFileSync(outPath, json)
+  const pub = path.join(base, 'public')
   mkdirSync(pub, { recursive: true })
-  writeFileSync(path.join(pub, 'bundle.json'), JSON.stringify(result.bundle, null, 2))
+  writeFileSync(path.join(pub, 'bundle.json'), json)
 
   // Workspace output — the canonical copy for the USER'S project, outside this engine dir
   // (the engine install stays replaceable; bundles/ + public/ act as serving caches).
-  const workspaceOut = arg('out')
-  if (workspaceOut) {
-    const wsDir = path.resolve(workspaceOut)
+  if (o.out) {
+    const wsDir = path.resolve(o.out)
     mkdirSync(wsDir, { recursive: true })
-    writeFileSync(path.join(wsDir, 'bundle.json'), JSON.stringify(result.bundle, null, 2))
+    writeFileSync(path.join(wsDir, 'bundle.json'), json)
+  }
+  return { bundle: result.bundle, grounding, outPath }
+}
+
+function groundingLine(s: GroundingSummary): string {
+  return (
+    `  grounding: ${s.verified}/${s.total} verified` +
+    (s.exact ? `, ${s.exact} exact-verbatim` : '') +
+    (s.partial ? `, ${s.partial} partial` : '') +
+    (s.drifted ? `, ${s.drifted} DRIFTED ⚠` : '') +
+    (s.missingFile ? `, ${s.missingFile} missing-file ⚠` : '') +
+    (s.noSource ? `, ${s.noSource} ungrounded` : '')
+  )
+}
+
+async function main() {
+  const inPath = arg('in')
+  const dirPath = arg('dir')
+  const system = arg('system')
+  if ((!inPath && !dirPath) || !system) {
+    console.error('Usage: npm run assemble -- (--dir <workDir> | --in <loop-output.json>) --system <id> [--repo <repo-path>] [--out <dir>]')
+    process.exit(1)
+  }
+  let res: AssembleResult
+  try {
+    res = assemble({ dir: dirPath, inPath, system, repo: arg('repo'), out: arg('out') })
+  } catch (e) {
+    if (!(e instanceof AssembleError)) throw e
+    console.error(e.message)
+    process.exit(1)
   }
 
-  const b = result.bundle
+  const b = res.bundle
   const quizCount = b.modules.reduce((n, m) => n + m.quiz.length, 0)
   console.log(`✓ assembled ${b.system.name}  (${b.system.audience ?? 'developer'} · ${b.system.depth ?? 'depth n/a'})`)
   console.log(`  ${b.modules.length} module(s) · ${b.entities.length} entit(ies) · ${quizCount} quiz item(s)`)
-  if (groundingLine) console.log(groundingLine)
-  console.log(`  → ${path.relative(root, path.join(outDir, 'bundle.json'))}`)
+  if (res.grounding) console.log(groundingLine(res.grounding))
+  console.log(`  → ${path.relative(root, res.outPath)}`)
 }
 
 // Only run the CLI when executed directly (not when imported by the test).

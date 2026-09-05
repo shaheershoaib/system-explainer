@@ -276,8 +276,8 @@ export function tallyAdversarial(claimSets: { claims: { verdict: Verdict }[] }[]
 }
 
 // ── prep / report drivers ─────────────────────────────────────────────────────
-function runDir(system: string) {
-  return path.join(root, 'proof-runs', system)
+function runDir(base: string, system: string) {
+  return path.join(base, 'proof-runs', system)
 }
 function readJSON(p: string): any {
   return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null
@@ -379,12 +379,21 @@ function readManifest(dir: string): { modules: string[]; preppedAt?: string } | 
   return readJSON(path.join(dir, 'manifest.json'))
 }
 
-function prep() {
-  const system = arg('system')!
-  const bundlePath = arg('bundle')!
-  const only = arg('modules')?.split(',').map((s) => s.trim())
-  const bundle = JSON.parse(readFileSync(path.resolve(root, bundlePath), 'utf8'))
-  const dir = runDir(system)
+/** One proof run's coordinates. `root` is the engine directory (defaults to this package); proof-runs/<system>/ lives under it. */
+export interface ProofRunOptions {
+  system: string
+  bundlePath: string
+  /** Scope to these module ids (a scoped prep merges into the run's manifest). */
+  modules?: string[]
+  root?: string
+}
+
+export function prep(o: ProofRunOptions) {
+  const { system, bundlePath } = o
+  const base = o.root ?? root
+  const only = o.modules
+  const bundle = JSON.parse(readFileSync(path.resolve(base, bundlePath), 'utf8'))
+  const dir = runDir(base, system)
   for (const sub of ['inputs', 'keys', 'adversarial', 'learner', 'learner-cold']) mkdirSync(path.join(dir, sub), { recursive: true })
   const mods = (bundle.modules as any[]).filter((m) => !only || only.includes(m.id))
   let invalidated = 0
@@ -411,22 +420,23 @@ function prep() {
   const prevModules = only ? readManifest(dir)?.modules ?? [] : []
   const runModules = mergeManifestModules(prevModules, mods.map((m) => m.id), (bundle.modules as any[]).map((m) => m.id))
   writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ system, preppedAt: new Date().toISOString(), modules: runModules }, null, 2))
-  console.log(`✓ prepped ${mods.length} module(s) → ${path.relative(root, dir)}`)
+  console.log(`✓ prepped ${mods.length} module(s) → ${path.relative(base, dir)}`)
   console.log(`  modules: ${mods.map((m) => m.id).join(', ')}${runModules.length !== mods.length ? ` (run manifest now covers ${runModules.length}: ${runModules.join(', ')})` : ''}`)
   if (invalidated) console.log(`  invalidated ${invalidated} stale agent output(s) from prior runs of these modules`)
   const claimCount = mods.reduce((n, m) => n + collectClaims(m, bundle.traces || []).length, 0)
   console.log(`  ${claimCount} claim block(s) for adversarial verify · learner quizzes stripped + shuffled · manifest.json written`)
+  return { dir, prepped: mods.map((m) => m.id as string), runModules, claims: claimCount }
 }
 
 function pct(x: number) {
   return `${Math.round(x * 100)}%`
 }
 
-function report() {
-  const system = arg('system')!
-  const bundlePath = arg('bundle')!
-  const bundle = JSON.parse(readFileSync(path.resolve(root, bundlePath), 'utf8'))
-  const dir = runDir(system)
+export function report(o: ProofRunOptions) {
+  const { system, bundlePath } = o
+  const base = o.root ?? root
+  const bundle = JSON.parse(readFileSync(path.resolve(base, bundlePath), 'utf8'))
+  const dir = runDir(base, system)
   const g = bundle.provenance?.grounding
   const repoRef = g?.repoRef || bundle.system?.repoUrl || 'unknown'
 
@@ -559,18 +569,25 @@ function report() {
     path.join(dir, 'proof-report.json'),
     JSON.stringify({ system, repoRef, grounding: g, adversarial: adv, effectiveness: { mode: hardened ? 'hardened-generated' : 'course-quiz', taughtOverall: primary.taughtOverall, coldOverall: primary.coldOverall, lift: primary.taughtOverall - primary.coldOverall, invalidRuns: primary.invalid.map((r) => r.id), rows: primary.rows, courseQuiz: { taughtOverall: course.taughtOverall, coldOverall: course.coldOverall, present: course.present } }, generatedFrom: prepped, manifest: !!manifest }, null, 2),
   )
-  console.log(`✓ proof report → ${path.relative(root, path.join(dir, 'PROOF_REPORT.md'))}`)
+  console.log(`✓ proof report → ${path.relative(base, path.join(dir, 'PROOF_REPORT.md'))}`)
   console.log(`  faithful: ${g ? `${g.verified}/${g.total} verified, ${g.exact ?? 0} exact` : 'n/a'}`)
   console.log(`  true: ${adv.total ? `${adv.supported}/${adv.total} claims survived, ${adv.refuted} refuted, ${adv.unverifiable} unverifiable` : 'not run'}`)
   console.log(`  effective${hardened ? ' (hardened)' : ''}: taught ${pct(primary.taughtOverall)} vs cold ${pct(primary.coldOverall)} = +${Math.round((primary.taughtOverall - primary.coldOverall) * 100)} pts lift`)
+  return {
+    reportPath: path.join(dir, 'PROOF_REPORT.md'),
+    grounding: g,
+    adversarial: adv,
+    effectiveness: { mode: hardened ? 'hardened-generated' : 'course-quiz', taughtOverall: primary.taughtOverall, coldOverall: primary.coldOverall, invalidRuns: primary.invalid.map((r) => r.id) },
+    modules: prepped,
+  }
 }
 
 /** Strip + shuffle agent-generated raw quizzes (genraw/<mod>.json) into learner-facing genquiz/ + held-back genkeys/. */
-function genprep() {
-  const system = arg('system')!
-  const bundlePath = arg('bundle')!
-  const bundle = JSON.parse(readFileSync(path.resolve(root, bundlePath), 'utf8'))
-  const dir = runDir(system)
+export function genprep(o: ProofRunOptions) {
+  const { system, bundlePath } = o
+  const base = o.root ?? root
+  const bundle = JSON.parse(readFileSync(path.resolve(base, bundlePath), 'utf8'))
+  const dir = runDir(base, system)
   for (const sub of ['genraw', 'genquiz', 'genkeys', 'learner-gen', 'learner-gen-cold']) mkdirSync(path.join(dir, sub), { recursive: true })
   const manifest = readManifest(dir)
   const rawDir = path.join(dir, 'genraw')
@@ -608,15 +625,17 @@ function genprep() {
     items += quiz.length
   }
   console.log(`✓ gen-prepped ${n} module(s) · ${items} hardened question(s)${dropped ? ` · ${dropped} rejected` : ''} → genquiz/ + genkeys/ (answer keys held back; learner answers to any CHANGED quiz invalidated)`)
+  return { dir, modules: n, items, rejected: dropped }
 }
 
 // Only run the CLI when executed directly (not when imported by the test).
 const isMain = !!process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
 if (isMain) {
   const cmd = process.argv[2]
-  if (cmd === 'prep') prep()
-  else if (cmd === 'genprep') genprep()
-  else if (cmd === 'report') report()
+  const opts: ProofRunOptions = { system: arg('system')!, bundlePath: arg('bundle')!, modules: arg('modules')?.split(',').map((s) => s.trim()) }
+  if (cmd === 'prep') prep(opts)
+  else if (cmd === 'genprep') genprep(opts)
+  else if (cmd === 'report') report(opts)
   else {
     console.error('Usage: proof <prep|genprep|report> --system <id> --bundle <bundle.json> [--modules a,b,c]')
     process.exit(1)

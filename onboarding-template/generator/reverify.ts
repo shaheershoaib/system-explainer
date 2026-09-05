@@ -66,6 +66,11 @@ export function affectedModules(bundle: any, changed: Set<string>): AffectedModu
   return out
 }
 
+/** Repo-relative paths changed between `base` and HEAD (git diff --name-only). Throws when the diff cannot be computed. */
+export function changedFilesSince(repo: string, base: string): Set<string> {
+  return parseChangedFiles(execFileSync('git', ['-C', repo, 'diff', '--name-only', base, 'HEAD'], { encoding: 'utf8' }))
+}
+
 /** "name@sha" -> sha (the bundle's pinned verification commit). */
 export function pinnedSha(bundle: any): string | undefined {
   const ref: string | undefined = bundle?.provenance?.grounding?.repoRef
@@ -74,44 +79,49 @@ export function pinnedSha(bundle: any): string | undefined {
 }
 
 
-function main() {
-  const system = arg('system')
-  const bundlePath = arg('bundle')
-  const repo = arg('repo')
-  if (!system || !bundlePath || !repo) {
-    console.error('Usage: npm run reverify -- --system <id> --bundle <bundle.json> --repo <repo-path> [--since <ref>] [--write]')
-    process.exit(1)
-  }
-  const absBundle = path.resolve(root, bundlePath)
+export interface ReverifyOptions {
+  system: string
+  bundlePath: string
+  repo: string
+  /** Diff base; defaults to the bundle's pinned sha. */
+  since?: string
+  /** Restamp the bundle (and the active public copy) at HEAD. */
+  write?: boolean
+  /** Engine dir the bundle path is resolved against (default: this package). */
+  root?: string
+}
+
+export interface ReverifyResult {
+  base: string
+  changed: number
+  affected: AffectedModule[]
+  summary: ReturnType<typeof summarize>
+  bad: { status: string; moduleId: string; sourcePath?: string }[]
+  restamped?: string
+}
+
+/** The free half of the proof loop: diff since the pinned sha -> affected modules -> grounding gate at HEAD. Throws when the diff cannot be scoped. */
+export function reverify(o: ReverifyOptions): ReverifyResult {
+  const base_ = o.root ?? root
+  const absBundle = path.resolve(base_, o.bundlePath)
   const bundle = JSON.parse(readFileSync(absBundle, 'utf8'))
-  const base = arg('since') || pinnedSha(bundle)
-  if (!base) {
-    console.error('✗ no pinned sha on the bundle (provenance.grounding.repoRef) and no --since given — cannot scope the diff')
-    process.exit(1)
-  }
+  const base = o.since || pinnedSha(bundle)
+  if (!base) throw new Error('no pinned sha on the bundle (provenance.grounding.repoRef) and no --since given; cannot scope the diff')
 
   // 1) the diff since the verified commit
   let changed: Set<string>
   try {
-    changed = parseChangedFiles(execFileSync('git', ['-C', repo, 'diff', '--name-only', base, 'HEAD'], { encoding: 'utf8' }))
+    changed = changedFilesSince(o.repo, base)
   } catch (e: any) {
-    console.error(`✗ git diff ${base}..HEAD failed in ${repo} (shallow clone or unknown ref?) — pass --since <ref>\n  ${e.message}`)
-    process.exit(1)
+    throw new Error(`git diff ${base}..HEAD failed in ${o.repo} (shallow clone or unknown ref?); pass --since <ref>\n  ${e.message}`)
   }
 
   // 2) diff -> affected modules (the scoped re-author worklist)
   const affected = affectedModules(bundle, changed)
-  console.log(`reverify ${system}: ${changed.size} file(s) changed since ${base.slice(0, 7)}`)
-  if (affected.length) {
-    console.log(`  ${affected.length} module(s) cite changed files:`)
-    for (const a of affected) console.log(`   • ${a.moduleId} ("${a.title}") — ${a.blocks} block(s): ${a.files.join(', ')}`)
-  } else {
-    console.log('  no module cites a changed file — course content untouched by this diff')
-  }
 
   // 3) re-run the authoritative grounding gate against HEAD
   const read: FileReader = (sp) => {
-    const fp = path.join(repo, sp)
+    const fp = path.join(o.repo, sp)
     return existsSync(fp) ? readFileSync(fp, 'utf8') : null
   }
   const results = verifyGrounding(bundle, read)
@@ -125,28 +135,61 @@ function main() {
     }
   }
   const s = summarize(results)
-  const bad = results.filter((r) => r.status === 'drifted' || r.status === 'missing-file')
-  console.log(`  grounding @ HEAD: ${s.verified}/${s.total} verified, ${s.exact} exact${s.drifted ? `, ${s.drifted} DRIFTED ⚠` : ''}${s.missingFile ? `, ${s.missingFile} missing-file ⚠` : ''}`)
-  for (const r of bad) console.log(`   ⚠ ${r.status}: module ${r.ref.moduleId} · ${r.ref.sourcePath} — re-author this block`)
+  const bad = results
+    .filter((r) => r.status === 'drifted' || r.status === 'missing-file')
+    .map((r) => ({ status: r.status, moduleId: r.ref.moduleId, sourcePath: r.ref.sourcePath }))
 
   // 4) restamp + write (opt-in, so a dry run never mutates)
-  if (flag('write')) {
+  let restamped: string | undefined
+  if (o.write) {
     bundle.provenance = {
       ...(bundle.provenance ?? { sources: [] }),
-      grounding: { repoRef: repoRefOf(repo), verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
+      grounding: { repoRef: repoRefOf(o.repo), verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
     }
     writeFileSync(absBundle, JSON.stringify(bundle, null, 2))
-    const pub = path.join(root, 'public', 'bundle.json')
+    const pub = path.join(base_, 'public', 'bundle.json')
     if (existsSync(pub)) {
       const active = JSON.parse(readFileSync(pub, 'utf8'))
       if (active?.system?.id === bundle?.system?.id) writeFileSync(pub, JSON.stringify(bundle, null, 2))
     }
-    console.log(`  ✓ restamped ${path.relative(root, absBundle)} @ ${bundle.provenance.grounding.repoRef}`)
-  } else {
-    console.log('  (dry run — pass --write to restamp the bundle at HEAD)')
+    restamped = bundle.provenance.grounding.repoRef
   }
+  return { base, changed: changed.size, affected, summary: s, bad, restamped }
+}
 
-  process.exit(bad.length ? 1 : 0)
+/** Console rendering shared by `npm run reverify` and the `system-explainer reverify` command. */
+export function printReverify(system: string, bundlePath: string, r: ReverifyResult, write: boolean) {
+  console.log(`reverify ${system}: ${r.changed} file(s) changed since ${r.base.slice(0, 7)}`)
+  if (r.affected.length) {
+    console.log(`  ${r.affected.length} module(s) cite changed files:`)
+    for (const a of r.affected) console.log(`   • ${a.moduleId} ("${a.title}") — ${a.blocks} block(s): ${a.files.join(', ')}`)
+  } else {
+    console.log('  no module cites a changed file — course content untouched by this diff')
+  }
+  const s = r.summary
+  console.log(`  grounding @ HEAD: ${s.verified}/${s.total} verified, ${s.exact} exact${s.drifted ? `, ${s.drifted} DRIFTED ⚠` : ''}${s.missingFile ? `, ${s.missingFile} missing-file ⚠` : ''}`)
+  for (const b of r.bad) console.log(`   ⚠ ${b.status}: module ${b.moduleId} · ${b.sourcePath} — re-author this block`)
+  if (write) console.log(`  ✓ restamped ${bundlePath} @ ${r.restamped}`)
+  else console.log('  (dry run — pass --write to restamp the bundle at HEAD)')
+}
+
+function main() {
+  const system = arg('system')
+  const bundlePath = arg('bundle')
+  const repo = arg('repo')
+  if (!system || !bundlePath || !repo) {
+    console.error('Usage: npm run reverify -- --system <id> --bundle <bundle.json> --repo <repo-path> [--since <ref>] [--write]')
+    process.exit(1)
+  }
+  let r: ReverifyResult
+  try {
+    r = reverify({ system, bundlePath, repo, since: arg('since'), write: flag('write') })
+  } catch (e: any) {
+    console.error(`✗ ${e.message}`)
+    process.exit(1)
+  }
+  printReverify(system, path.relative(root, path.resolve(root, bundlePath)), r, flag('write'))
+  process.exit(r.bad.length ? 1 : 0)
 }
 
 // Only run the CLI when executed directly (not when imported by the test).
