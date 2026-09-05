@@ -1,12 +1,39 @@
 {
-  "name": "onboarding-template",
-  "private": true,
-  "version": "0.1.0",
+  "name": "system-explainer",
+  "version": "3.2.0",
+  "description": "Turn a repository into a grounded, adversarially verified onboarding course: `system-explainer course <repo>` authors it, `prove` verifies it, `reverify` re-checks it for free.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shaheershoaib/system-explainer.git",
+    "directory": "onboarding-template"
+  },
+  "homepage": "https://github.com/shaheershoaib/system-explainer#readme",
+  "keywords": [
+    "onboarding",
+    "documentation",
+    "codebase",
+    "course",
+    "claude",
+    "anthropic",
+    "grounded",
+    "verification",
+    "cli"
+  ],
   "type": "module",
-  "description": "System-agnostic onboarding-app engine for the system-explainer skill. Seeded per system with a content bundle (see schema/bundle.types.ts).",
   "engines": {
     "node": ">=20"
   },
+  "bin": {
+    "system-explainer": "bin/system-explainer.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist-cli/",
+    "dist/",
+    "fixtures/mini-repo/",
+    "README.md"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -19,20 +46,16 @@
     "assemble": "tsx generator/assemble-bundle.ts",
     "server": "tsx server/index.ts",
     "reverify": "tsx generator/reverify.ts",
-    "export": "vite build"
+    "export": "vite build",
+    "cli": "tsx generator/system-explainer.ts",
+    "course": "tsx generator/system-explainer.ts course",
+    "prove": "tsx generator/system-explainer.ts prove",
+    "cli:smoke": "tsx generator/system-explainer.ts smoke",
+    "build:cli": "vite build --config vite.cli.config.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run build:cli && node bin/system-explainer.mjs smoke"
   },
   "dependencies": {
-    "clsx": "^2.1.1",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "lucide-react": "^1.18.0",
-    "prism-react-renderer": "^2.4.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-markdown": "^10.1.0",
-    "react-router": "^7.17.0",
-    "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0",
+    "@anthropic-ai/sdk": "^0.124.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -45,7 +68,18 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "jsdom": "^29.1.1",
+    "lucide-react": "^1.18.0",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "react-router": "^7.17.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
