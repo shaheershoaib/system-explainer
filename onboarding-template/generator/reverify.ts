@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { verifyGrounding, summarize, type FileReader } from './verify-grounding'
+import { applyGrounding, verifyGrounding, summarize, type FileReader } from './verify-grounding'
 import { repoRefOf } from './repo-ref'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -125,15 +125,7 @@ export function reverify(o: ReverifyOptions): ReverifyResult {
     return existsSync(fp) ? readFileSync(fp, 'utf8') : null
   }
   const results = verifyGrounding(bundle, read)
-  for (const r of results) {
-    const lesson = bundle.modules.find((x: any) => x.id === r.ref.moduleId)?.lessons.find((l: any) => l.id === r.ref.lessonId)
-    const blk = lesson?.blocks[r.ref.blockIndex]
-    if (blk && blk.type === 'code') {
-      blk.verified = r.status
-      if (r.lineRange) blk.lineRange = r.lineRange
-      else if (!r.exact) delete blk.lineRange // stale line anchors must not survive a drifted re-verify
-    }
-  }
+  applyGrounding(bundle, results)
   const s = summarize(results)
   const bad = results
     .filter((r) => r.status === 'drifted' || r.status === 'missing-file')

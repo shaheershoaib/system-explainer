@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateBundle } from './validate'
-import { verifyGrounding, summarize, type FileReader, type GroundingSummary } from './verify-grounding'
+import { applyGrounding, verifyGrounding, summarize, type FileReader, type GroundingSummary } from './verify-grounding'
 import { repoRefOf } from './repo-ref'
 import { BUNDLE_SCHEMA_VERSION, type Block, type Entity, type Module, type OnboardingBundle, type QuizItem } from '../schema/bundle'
 
@@ -223,14 +223,7 @@ export function assemble(o: AssembleOptions): AssembleResult {
       return existsSync(fp) ? readFileSync(fp, 'utf8') : null
     }
     const results = verifyGrounding(bundle, read)
-    for (const r of results) {
-      const lesson = bundle.modules.find((x: any) => x.id === r.ref.moduleId)?.lessons.find((l: any) => l.id === r.ref.lessonId)
-      const blk = lesson?.blocks[r.ref.blockIndex]
-      if (blk && blk.type === 'code') {
-        blk.verified = r.status
-        if (r.lineRange) blk.lineRange = r.lineRange // exact matches deep-link to #L<start>-L<end>
-      }
-    }
+    applyGrounding(bundle, results)
     const s = summarize(results)
     bundle.provenance = {
       sources: [],

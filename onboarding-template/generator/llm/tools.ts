@@ -23,6 +23,12 @@ export interface SandboxOptions {
   maxReadBytes?: number
   /** default 200 */
   maxSearchHits?: number
+  /**
+   * Repo-relative path prefixes the agent can neither list, read, search nor pass to git (e.g. the
+   * run's own output under .system-explainer/ when a document corpus sits beside the code). A hidden
+   * path behaves exactly like a missing one.
+   */
+  hidden?: string[]
 }
 export interface ToolOutcome {
   content: string
@@ -175,14 +181,23 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   const maxReadBytes = opts.maxReadBytes ?? 64 * 1024
   const maxSearchHits = opts.maxSearchHits ?? 200
   const repoRel = (abs: string) => toPosix(path.relative(repoDir, abs)) || '.'
+  const hidden = (opts.hidden ?? []).map((h) => toPosix(h).replace(/^\.\/|\/+$/g, '')).filter(Boolean)
+  const isHidden = (rel: string) => hidden.some((h) => rel === h || rel.startsWith(`${h}/`))
+  /** resolveInside plus the hidden-prefix rule; a hidden path is reported as not found. */
+  const resolveVisible = (p: string) => {
+    const abs = resolveInside(repoDir, p)
+    if (isHidden(repoRel(abs))) throw new SandboxError(`not found: ${p}`)
+    return abs
+  }
 
   async function listDir(raw: unknown): Promise<string> {
     const { path: p = '.' } = parse(IN.list_dir, raw)
-    const dir = resolveInside(repoDir, p)
+    const dir = resolveVisible(p)
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch((e) => fsError(e, p))
     const base = repoRel(dir)
     const lines = entries
       .filter((e) => !(e.isDirectory() && SKIP_DIRS.has(e.name)))
+      .filter((e) => !isHidden(base === '.' ? e.name : `${base}/${e.name}`))
       .map((e) => (base === '.' ? e.name : `${base}/${e.name}`) + (e.isDirectory() ? '/' : ''))
       .sort()
     return lines.length ? lines.join('\n') : '(empty directory)'
@@ -190,7 +205,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   async function readFile(raw: unknown): Promise<string> {
     const { path: p, start_line, end_line } = parse(IN.read_file, raw)
-    const buf = await fs.readFile(resolveInside(repoDir, p)).catch((e) => fsError(e, p))
+    const buf = await fs.readFile(resolveVisible(p)).catch((e) => fsError(e, p))
     if (isBinary(buf)) throw new SandboxError(`binary file: ${p}`)
     const lines = buf.toString('utf8').split('\n')
     if (lines.at(-1) === '') lines.pop()
@@ -221,7 +236,8 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   async function search(raw: unknown): Promise<string> {
     const { pattern, glob, fixed_strings } = parse(IN.search, raw)
-    const hits = (await rgSearch(pattern, glob, fixed_strings)) ?? (await searchFallback(repoDir, pattern, { glob, fixedStrings: fixed_strings }))
+    const all = (await rgSearch(pattern, glob, fixed_strings)) ?? (await searchFallback(repoDir, pattern, { glob, fixedStrings: fixed_strings }))
+    const hits = hidden.length ? all.filter((h) => !isHidden(h.path)) : all
     if (!hits.length) return '(no matches)'
     const shown = hits.slice(0, maxSearchHits).map((h) => `${h.path}:${h.line}: ${h.text}`)
     if (hits.length > maxSearchHits) shown.push(`... (truncated; ${hits.length - maxSearchHits} more hits; narrow the pattern or add a glob)`)
@@ -261,7 +277,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   async function gitLog(raw: unknown): Promise<string> {
     const { path: p, max = 20 } = parse(IN.git_log, raw)
     const args = ['log', '--no-color', '--date=short', '--format=%h %ad %an %s', '-n', String(max)]
-    if (p) args.push('--', repoRel(resolveInside(repoDir, p)))
+    if (p) args.push('--', repoRel(resolveVisible(p)))
     return (await git(args)).trim() || '(no commits)'
   }
 
@@ -270,7 +286,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // A leading "-" would let the model smuggle in an option such as --upload-pack=<cmd>.
     if (ref.startsWith('-') || !REF_OK.test(ref)) throw new SandboxError(`invalid ref: ${ref}`)
     const args = ['show', '--no-color', ref]
-    if (p) args.push('--', repoRel(resolveInside(repoDir, p)))
+    if (p) args.push('--', repoRel(resolveVisible(p)))
     return capLines(await git(args), max_lines)
   }
 

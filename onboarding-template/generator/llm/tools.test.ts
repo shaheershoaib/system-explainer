@@ -241,3 +241,20 @@ describe('execute', () => {
     expect(await sb.execute('list_dir', null)).toMatchObject({ is_error: true })
   })
 })
+
+describe('hidden paths', () => {
+  it('hides a prefix from list_dir, read_file, search and git, as if it did not exist', async () => {
+    const hid = createSandbox({ repoDir: repo, workDir: work, hidden: ['sub/nested'] })
+    const listed = await hid.execute('list_dir', { path: 'sub' })
+    expect(listed.content).toContain('sub/b.txt')
+    expect(listed.content).not.toContain('nested')
+    const read = await hid.execute('read_file', { path: 'sub/nested/c.md' })
+    expect(read.is_error).toBe(true)
+    expect(read.content).toMatch(/not found/)
+    const found = await hid.execute('search', { pattern: 'hello from', fixed_strings: true })
+    expect(found.content).toContain('sub/b.txt')
+    expect(found.content).not.toContain('nested')
+    const log = await hid.execute('git_log', { path: 'sub/nested/c.md' })
+    expect(log.is_error).toBe(true)
+  })
+})

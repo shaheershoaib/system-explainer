@@ -9,7 +9,7 @@
  */
 import { z } from 'zod'
 
-export const BUNDLE_SCHEMA_VERSION = '1.0.0'
+export const BUNDLE_SCHEMA_VERSION = '1.1.0'
 
 // ── Context layer: external actors ───────────────────────────────────────────
 export const ActorRelationshipSchema = z.object({
@@ -238,6 +238,27 @@ const CodeBlockSchema = z.object({
   /** Stamped by the grounding-verify pass against the real repo; never hand-authored. */
   verified: z.enum(['verified', 'partial', 'drifted', 'missing-file', 'no-source']).optional(),
 })
+// Quote: verbatim evidence from a document (a meeting note, transcript, PDF, wiki page) - the
+// documents-mode counterpart of a code block. Grounded the same way: `text` must appear in the
+// corpus file at `sourcePath` (whitespace, typographic quotes and markdown emphasis normalized).
+const QuoteBlockSchema = z.object({
+  type: z.literal('quote'),
+  text: z.string(),
+  sourcePath: z.string(),
+  cite: z.object({
+    title: z.string(),
+    /** A SourceKind from the corpus manifest (meeting notes, pdf, notion, transcript, ...). */
+    kind: z.string().optional(),
+    /** YYYY-MM-DD the content is from; later sources win when they disagree. */
+    date: z.string().optional(),
+    speaker: z.string().optional(),
+    url: z.string().optional(),
+  }),
+  caption: z.string().optional(),
+  lineRange: z.object({ start: z.number(), end: z.number() }).optional(),
+  /** Stamped by the grounding-verify pass against the corpus; never hand-authored. */
+  verified: z.enum(['verified', 'partial', 'drifted', 'missing-file', 'no-source']).optional(),
+})
 const WorkedStepSchema = z.object({
   label: z.string(),
   compute: z.string().optional(),
@@ -328,6 +349,7 @@ export const BlockSchema = z.discriminatedUnion('type', [
   MentalModelBlockSchema,
   PredictRevealBlockSchema,
   DiagramBlockSchema,
+  QuoteBlockSchema,
   CodeBlockSchema,
   WorkedExampleBlockSchema,
   CalloutBlockSchema,
@@ -475,14 +497,29 @@ export const ReviewSchema = z.object({
   /** SME questions surfaced from the content that a human still needs to answer. */
   openQuestions: z.array(z.string()).optional(),
 })
+// What a documents or mixed course was built from, and what it was built WITHOUT: a source that
+// could not be read is listed here and shown to the learner, never silently dropped.
+export const CorpusSummarySchema = z.object({
+  mode: z.enum(['code', 'documents', 'mixed']),
+  docs: z.number(),
+  unreachable: z.array(z.object({ source: z.string(), why: z.string() })).optional(),
+})
 export const ProvenanceSchema = z.object({
   sources: z.array(
     z.object({
       path: z.string(),
       sha256: z.string().optional(),
       lastModified: z.string().optional(),
+      title: z.string().optional(),
+      kind: z.string().optional(),
+      origin: z.string().optional(),
+      date: z.string().optional(),
+      retrievedAt: z.string().optional(),
+      /** Model id when the text was transcribed by a model (scanned PDF, image) rather than parsed. */
+      transcribedBy: z.string().optional(),
     }),
   ),
+  corpus: CorpusSummarySchema.optional(),
   generatorVersion: z.string().optional(),
   grounding: GroundingSchema.optional(),
   review: ReviewSchema.optional(),
@@ -549,4 +586,6 @@ export type Theme = z.infer<typeof ThemeSchema>
 export type Grounding = z.infer<typeof GroundingSchema>
 export type Review = z.infer<typeof ReviewSchema>
 export type Provenance = z.infer<typeof ProvenanceSchema>
+export type CorpusSummary = z.infer<typeof CorpusSummarySchema>
+export type QuoteBlock = z.infer<typeof QuoteBlockSchema>
 export type OnboardingBundle = z.infer<typeof OnboardingBundleSchema>
