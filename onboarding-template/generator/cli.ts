@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { validateBundle } from './validate'
-import { verifyGrounding, summarize, collectOpenQuestions, type FileReader } from './verify-grounding'
+import { applyGrounding, verifyGrounding, summarize, collectOpenQuestions, type FileReader } from './verify-grounding'
 import { repoRefOf } from './repo-ref'
 import { BUNDLE_SCHEMA_VERSION, type OnboardingBundle, type Provenance } from '../schema/bundle'
 
@@ -92,14 +92,7 @@ async function main() {
       return existsSync(fp) ? readFileSync(fp, 'utf8') : null
     }
     const results = verifyGrounding(stamped, read)
-    for (const r of results) {
-      const lesson = stamped.modules.find((x) => x.id === r.ref.moduleId)?.lessons.find((l) => l.id === r.ref.lessonId)
-      const blk = lesson?.blocks[r.ref.blockIndex]
-      if (blk?.type === 'code') {
-        blk.verified = r.status
-        if (r.lineRange) blk.lineRange = r.lineRange // exact matches deep-link to #L<start>-L<end>
-      }
-    }
+    applyGrounding(stamped, results)
     const s = summarize(results)
     stamped.provenance = {
       ...(stamped.provenance ?? { sources: [] }),

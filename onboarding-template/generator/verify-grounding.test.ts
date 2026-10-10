@@ -8,6 +8,8 @@ import {
   verifyGrounding,
   summarize,
   collectOpenQuestions,
+  applyGrounding,
+  normalizeQuote,
   type FileReader,
 } from './verify-grounding'
 import type { OnboardingBundle } from '../schema/bundle'
@@ -187,5 +189,60 @@ describe('verifyGrounding — exact mode', () => {
     const results = verifyGrounding(bundleExact(), reader)
     expect(results[2].exact).toBe(false)
     expect(results[2].status).toBe('partial')
+  })
+})
+
+describe('quote blocks (documents mode)', () => {
+  const note = [
+    '# Pricing review, 2026-09-16',
+    '',
+    '- **Dana:** we are moving the free tier from 3 seats to 5 seats, effective October 1.',
+    '> Sam: “The annual discount stays at 20 percent” — no change there.',
+    '',
+  ].join('\n')
+  const bundleWith = (text: string, sourcePath = 'pricing/notes.md'): OnboardingBundle =>
+    ({
+      schemaVersion: '1.1.0',
+      system: { id: 's', name: 'S', oneLiner: 'x' },
+      actors: [],
+      entities: [],
+      modules: [{ id: 'm', title: 'M', objective: 'o', lessons: [{ id: 'l', title: 'L', blocks: [{ type: 'quote', text, sourcePath, cite: { title: 'Pricing review', date: '2026-09-16' } }] }], quiz: [] }],
+    }) as unknown as OnboardingBundle
+  const read: FileReader = (p) => (p === 'pricing/notes.md' ? note : null)
+
+  it('verifies a quote that only lost markdown emphasis, bullets and curly quotes', () => {
+    const [r] = verifyGrounding(bundleWith('Dana: we are moving the free tier from 3 seats to 5 seats, effective October 1.'), read)
+    expect(r.ref.blockType).toBe('quote')
+    expect(r.status).toBe('verified')
+    expect(r.exact).toBe(true)
+    expect(r.lineRange).toEqual({ start: 3, end: 3 })
+    const [r2] = verifyGrounding(bundleWith('Sam: "The annual discount stays at 20 percent" - no change there.'), read)
+    expect(r2.status).toBe('verified')
+  })
+
+  it('never verifies a paraphrase: a changed number is partial, an invented quote is drifted', () => {
+    const [changed] = verifyGrounding(bundleWith('Dana: we are moving the free tier from 3 seats to 10 seats, effective October 1.'), read)
+    expect(changed.exact).toBe(false)
+    expect(changed.status).toBe('partial')
+    const [invented] = verifyGrounding(bundleWith('Leadership approved a brand new enterprise plan for hospitals next quarter.'), read)
+    expect(invented.status).toBe('drifted')
+    const [gone] = verifyGrounding(bundleWith('Dana: we are moving the free tier from 3 seats to 5 seats', 'pricing/missing.md'), read)
+    expect(gone.status).toBe('missing-file')
+  })
+
+  it('applyGrounding stamps the quote block and clears a stale line range', () => {
+    const b = bundleWith('Dana: we are moving the free tier from 3 seats to 5 seats, effective October 1.')
+    applyGrounding(b, verifyGrounding(b, read))
+    const blk = b.modules[0].lessons[0].blocks[0] as { verified?: string; lineRange?: unknown }
+    expect(blk.verified).toBe('verified')
+    expect(blk.lineRange).toEqual({ start: 3, end: 3 })
+    const drifted = verifyGrounding(b, () => 'the note was rewritten entirely and says something else now')
+    applyGrounding(b, drifted)
+    expect(blk.verified).toBe('drifted')
+    expect(blk.lineRange).toBeUndefined()
+  })
+
+  it('normalizeQuote keeps wording but drops formatting', () => {
+    expect(normalizeQuote('> - **We ship** on “Friday”…')).toBe('We ship on "Friday"...')
   })
 })

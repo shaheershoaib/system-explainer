@@ -18,8 +18,11 @@ export interface CodeBlockRef {
   moduleId: string
   lessonId: string
   blockIndex: number
+  /** 'quote' = verbatim evidence from a document; it is held to the exact standard (see verifyGrounding). */
+  blockType: 'code' | 'quote'
   sourcePath?: string
   excerpt?: 'verbatim' | 'adapted'
+  /** The snippet (code block) or the quoted text (quote block). */
   code: string
 }
 export interface GroundingResult {
@@ -127,6 +130,34 @@ export function statusFor(coverage: number, excerpt?: 'verbatim' | 'adapted'): G
   return 'drifted'
 }
 
+/**
+ * Prose normalization for QUOTE blocks only: a quote copied out of a markdown note or a transcript
+ * legitimately loses emphasis markers, list bullets and blockquote arrows, and gains straight quotes
+ * where the source had curly ones. None of that changes what was said, so none of it may fail the
+ * exact check. Wording, order and omissions still do.
+ */
+export function normalizeQuote(text: string): string {
+  return text
+    .split('\n')
+    .map((l) => l.replace(/^\s*(?:>\s*)+/, '').replace(/^\s*(?:[-*+]|\d+[.)])\s+/, ''))
+    .join(' ')
+    .replace(/[\u2018\u2019\u201B\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201F\u2033]/g, '"')
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[*_`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Exact containment after quote normalization. Same short floor as code: a few words prove nothing. */
+export function quoteMatch(quote: string, fileText: string): boolean {
+  const q = normalizeQuote(quote)
+  if (q.length < 24) return false
+  return normalizeQuote(fileText).includes(q)
+}
+
 export function collectCodeBlocks(bundle: OnboardingBundle): CodeBlockRef[] {
   const out: CodeBlockRef[] = []
   for (const m of bundle.modules)
@@ -137,10 +168,13 @@ export function collectCodeBlocks(bundle: OnboardingBundle): CodeBlockRef[] {
             moduleId: m.id,
             lessonId: lesson.id,
             blockIndex: i,
+            blockType: 'code',
             sourcePath: b.sourcePath,
             excerpt: b.excerpt,
             code: b.code,
           })
+        else if (b.type === 'quote')
+          out.push({ moduleId: m.id, lessonId: lesson.id, blockIndex: i, blockType: 'quote', sourcePath: b.sourcePath, excerpt: 'verbatim', code: b.text })
       })
   return out
 }
@@ -150,6 +184,7 @@ export function verifyGrounding(bundle: OnboardingBundle, read: FileReader): Gro
     if (!ref.sourcePath) return { ref, status: 'no-source', coverage: 0, exact: false }
     const text = read(ref.sourcePath)
     if (text == null) return { ref, status: 'missing-file', coverage: 0, exact: false }
+    if (ref.blockType === 'quote') return verifyQuote(ref, text)
     const exact = exactMatch(ref.code, text)
     const coverage = coverageOf(ref.code, text)
     // Exact copies are the strongest claim → always 'verified'. Otherwise fall back to
@@ -160,6 +195,54 @@ export function verifyGrounding(bundle: OnboardingBundle, read: FileReader): Gro
     const lineRange = exact ? findLineRange(ref.code, text) ?? undefined : undefined
     return { ref, status, coverage, exact, lineRange }
   })
+}
+
+/**
+ * A quote is evidence that someone SAID something, so a paraphrase is not a weaker pass, it is a
+ * misquote: only an exact (normalized) match is 'verified'. Word coverage still separates a quote
+ * that drifted (the doc was edited, a word changed) from one that was never there.
+ */
+function verifyQuote(ref: CodeBlockRef, text: string): GroundingResult {
+  const exact = quoteMatch(ref.code, text)
+  const words = (s: string) => normalizeQuote(s).toLowerCase().match(/[a-z0-9']{3,}/g) ?? []
+  const qWords = [...new Set(words(ref.code))]
+  const fileWords = new Set(words(text))
+  const coverage = qWords.length ? qWords.filter((w) => fileWords.has(w)).length / qWords.length : 0
+  const status: GroundingStatus = exact ? 'verified' : coverage >= 0.6 ? 'partial' : 'drifted'
+  const lineRange = exact ? findQuoteLines(ref.code, text) ?? undefined : undefined
+  return { ref, status, coverage, exact, lineRange }
+}
+
+/** Tightest 1-based line range containing the quote: the earliest line that completes it, widened back only as far as needed. */
+export function findQuoteLines(quote: string, fileText: string): { start: number; end: number } | null {
+  const target = normalizeQuote(quote)
+  const lines = fileText.split('\n')
+  for (let end = 0; end < lines.length; end++) {
+    let window = ''
+    for (let start = end; start >= 0; start--) {
+      window = start === end ? lines[end] : `${lines[start]}\n${window}`
+      const norm = normalizeQuote(window)
+      if (norm.includes(target)) return { start: start + 1, end: end + 1 }
+      if (norm.length > target.length * 4 + 200) break
+    }
+  }
+  return null
+}
+
+/**
+ * Write grounding results back onto the blocks they describe: the status, and the exact line
+ * range when there is one. A stale range from an earlier run is removed when the match is no
+ * longer exact, so a drifted block never deep-links to the wrong lines.
+ */
+export function applyGrounding(bundle: OnboardingBundle, results: GroundingResult[]): void {
+  for (const r of results) {
+    const lesson = bundle.modules.find((m) => m.id === r.ref.moduleId)?.lessons.find((l) => l.id === r.ref.lessonId)
+    const blk = lesson?.blocks[r.ref.blockIndex]
+    if (!blk || (blk.type !== 'code' && blk.type !== 'quote')) continue
+    blk.verified = r.status
+    if (r.lineRange) blk.lineRange = r.lineRange
+    else if (!r.exact) delete blk.lineRange
+  }
 }
 
 export function summarize(results: GroundingResult[]): GroundingSummary {
