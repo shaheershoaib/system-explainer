@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
-import { ArrowRight, BadgeCheck, CircleCheck, Clock, Lock, Map, RefreshCw, Route, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeCheck, CircleCheck, Clock, Lock, Map, RefreshCw, Route, ShieldCheck } from 'lucide-react'
+import type { CorpusSummary, Grounding } from '@schema/bundle'
 import { useBundle } from '../lib/useBundle'
 import { audienceOf, AUDIENCE_LABEL, shortRepoRef } from '../lib/persona'
 import { completedModuleIds, conceptsDue, moduleUnlocked, useProgress } from '../lib/progress'
@@ -16,6 +17,8 @@ export function HomePage() {
   const modules = [...bundle.modules].sort((a, b) => a.order - b.order)
   const titleOf = (id: string) => bundle.modules.find((m) => m.id === id)?.title ?? id
   const grounding = bundle.provenance?.grounding
+  const corpus = bundle.provenance?.corpus
+  const unreachable = corpus?.unreachable ?? []
   const reviewedBy = bundle.provenance?.review?.reviewedBy
   const due = conceptsDue(progress.concepts, Date.now())
 
@@ -34,7 +37,7 @@ export function HomePage() {
           </span>
           {grounding && grounding.total > 0 && (
             <span
-              title={`${grounding.verified}/${grounding.total} code snippets verified against ${shortRepoRef(grounding.repoRef) ?? 'source'}${grounding.drifted ? ` · ${grounding.drifted} drifted` : ''}`}
+              title={groundingTitle(grounding, corpus)}
               className={[
                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
                 grounding.drifted ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800',
@@ -62,6 +65,28 @@ export function HomePage() {
           </p>
         )}
       </section>
+
+      {unreachable.length > 0 && (
+        <section
+          aria-labelledby="unreachable-sources"
+          className="mb-7 flex gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <h2 id="unreachable-sources" className="text-sm font-semibold text-amber-800">
+              This course was built without {unreachable.length} source{unreachable.length === 1 ? '' : 's'} that could not be read
+            </h2>
+            <ul className="mt-1.5 space-y-1.5">
+              {unreachable.map((u, i) => (
+                <li key={i} className="text-sm">
+                  <code className="break-all rounded bg-canvas px-1 py-0.5 font-mono text-[12.5px] text-ink">{u.source}</code>
+                  <span className="mt-0.5 block text-xs text-muted">{u.why}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       <SystemMap />
 
@@ -146,6 +171,17 @@ export function HomePage() {
       )}
     </Layout>
   )
+}
+
+/** The grounding pill's tooltip: what was checked against what, worded for the kind of course. */
+function groundingTitle(g: Grounding, corpus: CorpusSummary | undefined): string {
+  const drifted = g.drifted ? ` · ${g.drifted} drifted` : ''
+  const repo = shortRepoRef(g.repoRef) ?? 'source'
+  const docs = `${corpus?.docs ?? 0} source document${corpus?.docs === 1 ? '' : 's'}`
+  if (corpus?.mode === 'documents') return `${g.verified}/${g.total} quotes verified against ${docs}${drifted}`
+  // Grounding does not split code snippets from quotes, so a mixed course names them together.
+  if (corpus?.mode === 'mixed') return `${g.verified}/${g.total} snippets and quotes verified against ${repo} and ${docs}${drifted}`
+  return `${g.verified}/${g.total} code snippets verified against ${repo}${drifted}`
 }
 
 /**
