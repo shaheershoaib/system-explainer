@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hash, seededShuffle, buildLearnerQuiz, buildGenQuiz, collectClaims, collectCitedPaths, scoreItem, scoreLearner, tallyAdversarial, renderLessons, mergeManifestModules } from './proof'
+import { hash, seededShuffle, buildLearnerQuiz, buildGenQuiz, collectClaims, collectCitedPaths, collectQuotes, scoreItem, scoreLearner, tallyAdversarial, renderLessons, renderSources, mergeManifestModules } from './proof'
 
 describe('seededShuffle', () => {
   it('is deterministic for a given seed and a permutation of the input', () => {
@@ -269,5 +269,53 @@ describe('trace blocks ("the life of one X") in the learner view + claim extract
   it('renders nothing for a trace block whose trace is missing (validation owns that error)', () => {
     expect(renderLessons(traceModule, [])).not.toContain('the life of')
     expect(collectClaims(traceModule, [])).toHaveLength(2)
+  })
+})
+
+describe('quote blocks (documents mode) in the learner view, the citations and the skeptic context', () => {
+  const quoteModule = {
+    id: 'cadence',
+    title: 'Cadence',
+    objective: 'o',
+    lessons: [
+      {
+        id: 'l1',
+        title: 'L1',
+        blocks: [
+          { type: 'prose', md: 'Invoices go out on the 5th.' },
+          { type: 'quote', text: 'Invoices now go out on the 5th,\nreplacing the 1st.', sourcePath: 'weekly/2026-09-15.md', cite: { title: 'Weekly sync', speaker: 'Ana', date: '2026-09-15' }, caption: 'The change' },
+          { type: 'code', language: 'ts', code: 'x', sourcePath: 'src/a.ts' },
+        ],
+      },
+    ],
+    quiz: [],
+  }
+
+  it('renders a quote labeled with who said it, when, and where, line by line', () => {
+    const md = renderLessons(quoteModule)
+    expect(md).toContain('**Quote** (Weekly sync, Ana, 2026-09-15; weekly/2026-09-15.md):\n> Invoices now go out on the 5th,\n> replacing the 1st.\n_The change_')
+  })
+
+  it('cites the quoted document beside the code, and hands the quote to the skeptic as context rather than a claim', () => {
+    expect(collectCitedPaths(quoteModule)).toEqual(['weekly/2026-09-15.md', 'src/a.ts'])
+    expect(collectClaims(quoteModule).map((c) => c.text)).toEqual(['Invoices go out on the 5th.'])
+    expect(collectQuotes(quoteModule)).toEqual([{ id: 'l1-b1', cite: 'Weekly sync, Ana, 2026-09-15; weekly/2026-09-15.md', text: 'Invoices now go out on the 5th,\nreplacing the 1st.' }])
+  })
+})
+
+describe('renderSources (the skeptic SOURCES list)', () => {
+  it('lists every provenance source oldest first, undated last, "-" for a missing field', () => {
+    const bundle = {
+      provenance: {
+        sources: [
+          { path: 'b.md', title: 'B', kind: 'markdown' },
+          { path: 'late.md', title: 'Late', kind: 'pdf', date: '2026-09-15' },
+          { path: 'a.md', kind: 'transcript' },
+          { path: 'early.md', title: 'Early', kind: 'markdown', date: '2026-09-01' },
+        ],
+      },
+    }
+    expect(renderSources(bundle).split('\n')).toEqual(['early.md | Early | markdown | 2026-09-01', 'late.md | Late | pdf | 2026-09-15', 'a.md | - | transcript | -', 'b.md | B | markdown | -'])
+    expect(renderSources({})).toBe('')
   })
 })

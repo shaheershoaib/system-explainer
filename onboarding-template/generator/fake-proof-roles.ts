@@ -1,8 +1,10 @@
 /**
  * A scripted stand-in for the four proof roles, so runProve can be tested offline through
- * createFakeClient. It reads the role from the `ROLE: <role>` first line of the system prompt and
- * its inputs from the <claims> / <quiz> blocks of the user message, then behaves deterministically:
- *   skeptic         one read_file on the first citedPath (when there is one), then every claim supported
+ * createFakeClient. It reads the role from the `ROLE: <role>` first line of the system prompt (and
+ * the course mode from the `MODE: <mode>` line under it, code when absent) and its inputs from the
+ * <claims> / <quiz> blocks of the user message, then behaves deterministically:
+ *   skeptic         one read_file on the first citedPath (when there is one), then every claim supported,
+ *                   citing that file (code) or that document (documents, mixed)
  *   quizgen         5 items x 4 distinct options, one correct, text derived from the module id
  *   learner-taught  every item answered with option key "a"
  *   learner-cold    every item answered with option key "b" (a non-zero lift whenever the key is "a")
@@ -16,11 +18,13 @@ type Params = Anthropic.MessageCreateParamsNonStreaming
 
 export function createFakeProofPlayer(): (callIndex: number, params: Params) => FakeStep {
   return (_callIndex, params) => {
-    const role = /^ROLE: (\S+)/.exec(textOf(params.system))?.[1]
+    const system = textOf(params.system)
+    const role = /^ROLE: (\S+)/.exec(system)?.[1]
+    const mode = /^MODE: (\S+)/m.exec(system)?.[1] ?? 'code'
     const user = textOf(params.messages[0]?.content)
     switch (role) {
       case 'skeptic':
-        return skeptic(user, params.messages.length > 1)
+        return skeptic(user, params.messages.length > 1, mode)
       case 'quizgen':
         return quizgen(user)
       case 'learner-taught':
@@ -33,11 +37,15 @@ export function createFakeProofPlayer(): (callIndex: number, params: Params) => 
   }
 }
 
-function skeptic(user: string, toolResultSeen: boolean): FakeStep {
+function skeptic(user: string, toolResultSeen: boolean, mode: string): FakeStep {
   const input = JSON.parse(between(user, 'claims')) as { moduleId: string; citedPaths: string[]; claims: { id: string; text: string }[] }
   const cited = input.citedPaths[0]
   if (cited && !toolResultSeen) return { toolUse: [{ name: 'read_file', input: { path: cited } }] }
-  const evidence = cited ? `${cited}: read via read_file, consistent with the claim (fake)` : 'no cited path to read (fake)'
+  const evidence = !cited
+    ? 'no cited path to read (fake)'
+    : mode === 'code'
+      ? `${cited}: read via read_file, consistent with the claim (fake)`
+      : `${cited}: read via read_file, the document states the claim (fake)`
   return { submit: { moduleId: input.moduleId, claims: input.claims.map((c) => ({ claim: `[${c.id}] ${c.text}`, verdict: 'supported', evidence })) } }
 }
 

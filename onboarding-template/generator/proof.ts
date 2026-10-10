@@ -24,6 +24,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { courseModeOf } from './reverify'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -68,6 +69,9 @@ export function renderLessons(m: any, traces: any[] = []): string {
           break
         case 'code':
           out.push('```' + (b.language || ''), b.code, '```', b.caption ? `_${b.caption}_` : '', '')
+          break
+        case 'quote':
+          out.push(`**Quote** (${citeOf(b)}):`, ...String(b.text).split('\n').map((t) => `> ${t}`), b.caption ? `_${b.caption}_` : '', '')
           break
         case 'worked-example':
           out.push(`**${b.title}**`)
@@ -211,10 +215,38 @@ export function collectCitedPaths(m: any, traces: any[] = []): string[] {
   const s = new Set<string>()
   for (const l of m.lessons || [])
     for (const b of l.blocks || []) {
-      if (b.type === 'code' && b.sourcePath) s.add(b.sourcePath)
+      if ((b.type === 'code' || b.type === 'quote') && b.sourcePath) s.add(b.sourcePath)
       if (b.type === 'trace') for (const st of traces.find((x) => x.id === b.traceId)?.steps || []) if (st.sourcePath) s.add(pathOnly(st.sourcePath))
     }
   return [...s]
+}
+
+/** "Title, speaker, date; path": who said a quote, when, and where it is, as the learner and the skeptic read it. */
+export function citeOf(b: any): string {
+  return `${[b.cite?.title, b.cite?.speaker, b.cite?.date].filter(Boolean).join(', ')}; ${b.sourcePath}`
+}
+
+/**
+ * A module's verbatim quotes, for the skeptic as context. They are not claims: Layer 1 already proved
+ * each one word-for-word, and a quote asserts only that someone wrote or said it.
+ */
+export function collectQuotes(m: any): { id: string; cite: string; text: string }[] {
+  const out: { id: string; cite: string; text: string }[] = []
+  for (const l of m.lessons || [])
+    for (let bi = 0; bi < (l.blocks || []).length; bi++) {
+      const b = l.blocks[bi]
+      if (b.type === 'quote') out.push({ id: `${l.id}-b${bi}`, cite: citeOf(b), text: b.text })
+    }
+  return out
+}
+
+/** One line per provenance source, "path | title | kind | date", oldest first (undated last): the skeptic's SOURCES block. */
+export function renderSources(bundle: any): string {
+  const cmp = (a = '', b = '') => (a < b ? -1 : a > b ? 1 : 0)
+  return [...(bundle.provenance?.sources || [])]
+    .sort((a, b) => (a.date && b.date ? cmp(a.date, b.date) : a.date ? -1 : b.date ? 1 : 0) || cmp(a.path, b.path))
+    .map((src) => [src.path, src.title, src.kind, src.date].map((v) => v || '-').join(' | '))
+    .join('\n')
 }
 
 // ── scoring ───────────────────────────────────────────────────────────────────
@@ -409,11 +441,13 @@ export function prep(o: ProofRunOptions) {
     const { quiz, key } = buildLearnerQuiz(m)
     writeFileSync(path.join(dir, 'inputs', `${m.id}.quiz.json`), JSON.stringify({ moduleId: m.id, title: m.title, objective: m.objective, quiz }, null, 2))
     writeFileSync(path.join(dir, 'keys', `${m.id}.key.json`), JSON.stringify({ moduleId: m.id, key }, null, 2))
+    const quotes = collectQuotes(m)
     writeFileSync(
       path.join(dir, 'inputs', `${m.id}.claims.json`),
-      JSON.stringify({ moduleId: m.id, title: m.title, objective: m.objective, citedPaths: collectCitedPaths(m, bundle.traces || []), claims: collectClaims(m, bundle.traces || []) }, null, 2),
+      JSON.stringify({ moduleId: m.id, title: m.title, objective: m.objective, citedPaths: collectCitedPaths(m, bundle.traces || []), claims: collectClaims(m, bundle.traces || []), ...(quotes.length ? { quotes } : {}) }, null, 2),
     )
   }
+  if (courseModeOf(bundle) !== 'code') writeFileSync(path.join(dir, 'inputs', 'sources.txt'), renderSources(bundle) + '\n')
   // The manifest is the single source of truth for which modules belong to THIS run;
   // report() reads only these, so leftovers from earlier differently-scoped runs are inert.
   // A scoped prep (--modules) merges into the existing run; an unscoped prep resets it.
@@ -431,6 +465,31 @@ export function prep(o: ProofRunOptions) {
 function pct(x: number) {
   return `${Math.round(x * 100)}%`
 }
+
+/** Per-block grounding stamps for one block type: the split a mixed course reports (the bundle's grounding record sums code and quotes). */
+function stampTally(bundle: any, type: 'code' | 'quote') {
+  const t = { total: 0, verified: 0, partial: 0, drifted: 0, missingFile: 0, unchecked: 0 }
+  for (const m of bundle.modules || [])
+    for (const l of m.lessons || [])
+      for (const b of l.blocks || []) {
+        if (b.type !== type) continue
+        t.total++
+        if (b.verified === 'verified') t.verified++
+        else if (b.verified === 'partial') t.partial++
+        else if (b.verified === 'drifted') t.drifted++
+        else if (b.verified === 'missing-file') t.missingFile++
+        else t.unchecked++
+      }
+  return t
+}
+const tallyWarnings = (t: ReturnType<typeof stampTally>, partialWord: string) =>
+  (t.partial ? `, ${t.partial} ${partialWord} ⚠` : '') + (t.drifted ? `, ${t.drifted} drifted ⚠` : '') + (t.missingFile ? `, ${t.missingFile} missing-file ⚠` : '') + (t.unchecked ? `, ${t.unchecked} not checked ⚠` : '')
+
+// The documents-mode report's own wording, kept together so the honest limits read as one statement.
+export const DOCS_TRUTH_SCOPE =
+  'It checks that the course says what the sources say. It does not check that the sources are right: meeting notes record decisions and opinions, not facts about the world.'
+const DOCS_COLD_CAVEAT =
+  '> **The cold control has never read these documents.** Private notes and internal documents are not in any model\'s training data, so the control answers from general knowledge alone and the lift measures what the course taught. That stops holding if the documents are public (a published spec, a public web page): then the control may have read them, as it may have read a public codebase.'
 
 export function report(o: ProofRunOptions) {
   const { system, bundlePath } = o
@@ -467,29 +526,71 @@ export function report(o: ProofRunOptions) {
   const primary = hardened ? gen : course // the hardened generated quiz wins when available
 
   // ── render ──
+  const mode = courseModeOf(bundle)
+  const docs = mode !== 'code'
+  const corpus = bundle.provenance?.corpus
   const L: string[] = []
   L.push(`# Proof report — ${bundle.system?.name || system}`)
   L.push('')
-  L.push(`Source of truth: \`${repoRef}\` · modules covered: ${prepped.length}/${(bundle.modules || []).length}`)
+  if (mode === 'documents') L.push(`Source of truth: ${corpus?.docs ?? 0} source document(s) (\`${repoRef}\`) · modules covered: ${prepped.length}/${(bundle.modules || []).length}`)
+  else if (mode === 'mixed') L.push(`Source of truth: the code at \`${repoRef}\` plus ${corpus?.docs ?? 0} source document(s) · modules covered: ${prepped.length}/${(bundle.modules || []).length}`)
+  else L.push(`Source of truth: \`${repoRef}\` · modules covered: ${prepped.length}/${(bundle.modules || []).length}`)
   L.push('')
-  L.push(`This report tests three claims the course makes about itself: that it is **faithful** (every snippet is real), **true** (every assertion survives an adversary trying to refute it against the source), and **effective** (a learner who only read the course can pass its own assessment).`)
+  if (docs) L.push(`This report tests three claims the course makes about itself: that it is **faithful** (every ${mode === 'mixed' ? 'snippet and quote' : 'quote'} is real), **true** (every assertion survives an adversary trying to refute it against the sources), and **effective** (a learner who only read the course can pass its own assessment).`)
+  else L.push(`This report tests three claims the course makes about itself: that it is **faithful** (every snippet is real), **true** (every assertion survives an adversary trying to refute it against the source), and **effective** (a learner who only read the course can pass its own assessment).`)
   L.push('')
-
-  L.push('## Layer 1 — Faithful · snippet = source')
-  if (g) {
-    L.push(`\`${g.verified}/${g.total}\` code snippets verified against source` + (g.exact != null ? `, **${g.exact} exact-verbatim** (byte-for-byte contiguous copies)` : '') + (g.drifted ? `, ${g.drifted} drifted ⚠` : '') + (g.missingFile ? `, ${g.missingFile} missing-file ⚠` : '') + '.')
+  if (corpus?.unreachable?.length) {
+    L.push('## Built without')
+    L.push('These sources could not be read, so nothing in the course comes from them. What they say is missing from the course, not checked by it:')
+    for (const u of corpus.unreachable) L.push(`- \`${u.source}\`: ${u.why}`)
     L.push('')
-    L.push('_Stamped by the grounding gate at author time; re-checked on every release so it cannot silently rot._')
-  } else L.push('_No grounding record on this bundle._')
-  L.push('')
+  }
 
-  L.push('## Layer 2 — True · adversarial claim verification')
+  if (docs) {
+    L.push('## Layer 1 — Faithful: every quote appears verbatim in its source document')
+    if (g) {
+      const code = stampTally(bundle, 'code')
+      const quote = stampTally(bundle, 'quote')
+      if (mode === 'mixed' || code.total) {
+        const codeExact = g.exact != null ? g.exact - quote.verified : null
+        L.push(`- \`${code.verified}/${code.total}\` code snippets verified against source` + (codeExact != null ? `, **${codeExact} exact-verbatim**` : '') + tallyWarnings(code, 'partial') + '.')
+      }
+      L.push(`- \`${quote.verified}/${quote.total}\` quotes appear verbatim in their source documents (exact after normalizing whitespace, typographic quotes and markdown emphasis)` + tallyWarnings(quote, 'misquoted (the wording differs)') + '.')
+      L.push('')
+      L.push('_Stamped by the grounding gate when the course was built; `reverify` re-checks every quote against the current documents, so an edited or deleted document cannot silently rot the course._')
+    } else L.push('_No grounding record on this bundle._')
+    const transcribed = (bundle.provenance?.sources || []).filter((src: any) => src.transcribedBy)
+    if (transcribed.length) {
+      L.push('')
+      L.push(`**${transcribed.length} source(s) were transcribed by a model**, not parsed, so quotes from them are checked against the transcription, not the original:`)
+      for (const src of transcribed) L.push(`- ${src.title || src.path} (\`${src.path}\`), transcribed by ${src.transcribedBy}`)
+    }
+    L.push('')
+  } else {
+    L.push('## Layer 1 — Faithful · snippet = source')
+    if (g) {
+      L.push(`\`${g.verified}/${g.total}\` code snippets verified against source` + (g.exact != null ? `, **${g.exact} exact-verbatim** (byte-for-byte contiguous copies)` : '') + (g.drifted ? `, ${g.drifted} drifted ⚠` : '') + (g.missingFile ? `, ${g.missingFile} missing-file ⚠` : '') + '.')
+      L.push('')
+      L.push('_Stamped by the grounding gate at author time; re-checked on every release so it cannot silently rot._')
+    } else L.push('_No grounding record on this bundle._')
+    L.push('')
+  }
+
+  L.push(docs ? '## Layer 2 — True to the sources' : '## Layer 2 — True · adversarial claim verification')
+  if (docs) {
+    L.push(`**What this layer checks, and what it does not.** ${DOCS_TRUTH_SCOPE}`)
+    L.push('')
+  }
   if (adv.total) {
-    L.push(`A skeptic agent re-read each prose/callout assertion and tried to **refute** it against \`${repoRef}\`, defaulting to "refuted/unverifiable" unless the code directly backs it.`)
+    if (mode === 'documents')
+      L.push('A skeptic agent re-read each prose/callout assertion and tried to **refute** it against the source documents, defaulting to "refuted/unverifiable" unless a document directly states it. A claim that a later dated document reverses counts as refuted (stale).')
+    else if (mode === 'mixed')
+      L.push(`A skeptic agent re-read each prose/callout assertion and tried to **refute** it against the code at \`${repoRef}\` and the source documents, checking behavior against the code first: a claim a document makes but the code contradicts counts as refuted, and so does one a later dated document reverses (stale).`)
+    else L.push(`A skeptic agent re-read each prose/callout assertion and tried to **refute** it against \`${repoRef}\`, defaulting to "refuted/unverifiable" unless the code directly backs it.`)
     L.push('')
     L.push(`- **${adv.supported}** supported`)
     L.push(`- **${adv.refuted}** refuted ${adv.refuted ? '⚠' : ''}`)
-    L.push(`- **${adv.unverifiable}** unverifiable (no code evidence either way)`)
+    L.push(`- **${adv.unverifiable}** unverifiable (${mode === 'documents' ? 'no document addresses it' : mode === 'mixed' ? 'no evidence in the code or the documents' : 'no code evidence either way'})`)
     L.push('')
     L.push(`Survival rate: **${pct(adv.total ? adv.supported / adv.total : 0)}** of ${adv.total} atomic claims.`)
     if (notSurvived.length) {
@@ -508,7 +609,8 @@ export function report(o: ProofRunOptions) {
   L.push(`## Layer 3 — Effective · simulated learner${hardened ? ' on a hardened comprehension quiz' : ' (cold-control)'}`)
   L.push('')
   if (hardened) {
-    L.push('**Method (hardened).** Fresh 4-option comprehension questions were generated per module, with the three distractors drawn from real-but-wrong facts in the same domain (a neighboring status, a sibling formula, an off-by-one FK direction) so they cannot be guessed from general knowledge. A capable learner answers them — "taught" reads only the module text; the "cold" control sees only the title + objective. The cold control fails not because the model is weak but because the distractors are *grounded*; the gap, **taught − cold = lift**, isolates what the course taught.')
+    const neighbors = docs ? 'a superseded decision, an option discussed and rejected, a neighboring date or owner' : 'a neighboring status, a sibling formula, an off-by-one FK direction'
+    L.push(`**Method (hardened).** Fresh 4-option comprehension questions were generated per module, with the three distractors drawn from real-but-wrong facts in the same domain (${neighbors}) so they cannot be guessed from general knowledge. A capable learner answers them — "taught" reads only the module text; the "cold" control sees only the title + objective. The cold control fails not because the model is weak but because the distractors are *grounded*; the gap, **taught − cold = lift**, isolates what the course taught.`)
   } else {
     L.push('**Method.** A learner agent reads ONLY the module text (answer key stripped, options shuffled) and takes the course\'s own quiz; a "cold" agent answers it having seen only the title + objective. **taught − cold = lift.** Auto-scored: mcq, ordering, spot-the-bug.')
   }
@@ -543,7 +645,12 @@ export function report(o: ProofRunOptions) {
     L.push('')
   }
   if (hardened && primary.cS > 0 && primary.coldOverall >= 0.6) {
-    L.push(`> **High cold-control caveat.** The cold control scored ${pct(primary.coldOverall)} on the hardened quiz — a sizable share of questions are answerable without reading the course (model priors on a well-known codebase, residual guessability, or both). Lift UNDERSTATES teaching here; weigh the per-item discrimination column and the faithful + true layers more heavily. Lift is most meaningful on private/internal repos, where a control cannot have priors.`)
+    const priors = mode === 'documents' ? ['public documents', 'private documents'] : ['a well-known codebase', 'private/internal repos']
+    L.push(`> **High cold-control caveat.** The cold control scored ${pct(primary.coldOverall)} on the hardened quiz — a sizable share of questions are answerable without reading the course (model priors on ${priors[0]}, residual guessability, or both). Lift UNDERSTATES teaching here; weigh the per-item discrimination column and the faithful + true layers more heavily. Lift is most meaningful on ${priors[1]}, where a control cannot have priors.`)
+    L.push('')
+  }
+  if (mode === 'documents') {
+    L.push(DOCS_COLD_CAVEAT)
     L.push('')
   }
   L.push('**Effectiveness depends on truth.** A quiz can only measure teaching if its answer key is correct. When a key encodes a claim that Layer 2 refuted, a "taught" learner scores by *absorbing the error* and the control may score higher by reasoning correctly. So Layer 2 must pass before Layer 3 means anything — that is why the two run together.')
@@ -556,7 +663,8 @@ export function report(o: ProofRunOptions) {
   }
 
   L.push('## Honest limitations')
-  L.push('- The learner is an LLM with prior knowledge it cannot fully suppress; the **cold control** is what makes the "taught" number meaningful (lift, not absolute), and on well-known public codebases even the control has priors — see the caveat above when it fires.')
+  L.push(`- The learner is an LLM with prior knowledge it cannot fully suppress; the **cold control** is what makes the "taught" number meaningful (lift, not absolute), and on ${mode === 'documents' ? 'public documents' : 'well-known public codebases'} even the control has priors — see the caveat above when it fires.`)
+  if (docs) L.push('- A quote proves the words are in the document. It does not prove they are true, still current, or the whole discussion, and Layer 2 catches a reversed decision only when the later document is one of the sources.')
   L.push('- **The author, skeptic, quiz-writer, and learner share a model family.** Shared blind spots can survive every layer — a claim wrong in a way the family reliably misjudges will pass its own adversary. For high-stakes courses, run the adversarial pass with a second model family (cross-model verification).')
   L.push('- Diagrams, simulations, and screens are rendered to the learner as short text stand-ins, so visual teaching is under-credited here.')
   L.push('- Adversarial verdicts are one skeptic per module; a production run votes N skeptics per claim and keeps only majority-supported.')
@@ -567,12 +675,12 @@ export function report(o: ProofRunOptions) {
   writeFileSync(path.join(dir, 'PROOF_REPORT.md'), md)
   writeFileSync(
     path.join(dir, 'proof-report.json'),
-    JSON.stringify({ system, repoRef, grounding: g, adversarial: adv, effectiveness: { mode: hardened ? 'hardened-generated' : 'course-quiz', taughtOverall: primary.taughtOverall, coldOverall: primary.coldOverall, lift: primary.taughtOverall - primary.coldOverall, invalidRuns: primary.invalid.map((r) => r.id), rows: primary.rows, courseQuiz: { taughtOverall: course.taughtOverall, coldOverall: course.coldOverall, present: course.present } }, generatedFrom: prepped, manifest: !!manifest }, null, 2),
+    JSON.stringify({ system, ...(docs ? { mode } : {}), repoRef, grounding: g, adversarial: adv, effectiveness: { mode: hardened ? 'hardened-generated' : 'course-quiz', taughtOverall: primary.taughtOverall, coldOverall: primary.coldOverall, lift: primary.taughtOverall - primary.coldOverall, invalidRuns: primary.invalid.map((r) => r.id), rows: primary.rows, courseQuiz: { taughtOverall: course.taughtOverall, coldOverall: course.coldOverall, present: course.present } }, generatedFrom: prepped, manifest: !!manifest }, null, 2),
   )
   console.log(`✓ proof report → ${path.relative(base, path.join(dir, 'PROOF_REPORT.md'))}`)
-  console.log(`  faithful: ${g ? `${g.verified}/${g.total} verified, ${g.exact ?? 0} exact` : 'n/a'}`)
+  console.log(`  faithful: ${g ? `${g.verified}/${g.total} verified, ${g.exact ?? 0} exact${docs ? ` (${stampTally(bundle, 'quote').verified} verbatim quote(s))` : ''}` : 'n/a'}`)
   console.log(`  true: ${adv.total ? `${adv.supported}/${adv.total} claims survived, ${adv.refuted} refuted, ${adv.unverifiable} unverifiable` : 'not run'}`)
-  console.log(`  effective${hardened ? ' (hardened)' : ''}: taught ${pct(primary.taughtOverall)} vs cold ${pct(primary.coldOverall)} = +${Math.round((primary.taughtOverall - primary.coldOverall) * 100)} pts lift`)
+  console.log(`  effective${hardened ? ' (hardened)' : ''}: taught ${pct(primary.taughtOverall)} vs cold ${pct(primary.coldOverall)} = ${primary.taughtOverall - primary.coldOverall >= 0 ? '+' : ''}${Math.round((primary.taughtOverall - primary.coldOverall) * 100)} pts lift`)
   return {
     reportPath: path.join(dir, 'PROOF_REPORT.md'),
     grounding: g,
