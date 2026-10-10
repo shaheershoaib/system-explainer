@@ -7,3 +7,5 @@ dist/
 onboarding-template/proof-runs/*
 !onboarding-template/proof-runs/zustand/
 onboarding-template/dist-cli/
+onboarding-template/LICENSE
+onboarding-template/NOTICE
