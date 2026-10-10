@@ -1,0 +1,10 @@
+Larkspur support FAQ
+
+Q: How do patients cancel an appointment?
+A: From the link in their confirmation email, up to 24 hours before the visit. Inside 24 hours they call the clinic.
+
+Q: Does Larkspur sync with Google Calendar?
+A: One-way today (Larkspur to Google). Two-way sync is on the Q4 roadmap.
+
+Q: Who handles billing questions?
+A: Escalate them to Sam.

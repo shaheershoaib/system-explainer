@@ -29,6 +29,12 @@ export interface SandboxOptions {
    * path behaves exactly like a missing one.
    */
   hidden?: string[]
+  /**
+   * Repo-relative directories that `search` must cover even though ripgrep would skip them by
+   * default (dot-directories, gitignored paths): a document corpus at .system-explainer/corpus is
+   * both. The JS fallback walks them already.
+   */
+  searchAlso?: string[]
 }
 export interface ToolOutcome {
   content: string
@@ -253,14 +259,28 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     args.push('.')
     try {
       const { stdout } = await execFileP('rg', args, { cwd: repoDir, maxBuffer: EXEC_MAX_BUFFER, encoding: 'utf8' })
-      return parseRg(stdout)
+      return mergeHits(parseRg(stdout), await rgSearchAlso(args))
     } catch (err) {
       const e = err as Error & { code?: number | string; stdout?: string; stderr?: string }
       if (e.code === 'ENOENT') return null
-      if (e.code === 1) return []
+      if (e.code === 1) return mergeHits([], await rgSearchAlso(args))
       // Exit 2 with output means some files were unreadable but the search itself ran.
-      if (e.code === 2 && e.stdout) return parseRg(e.stdout)
+      if (e.code === 2 && e.stdout) return mergeHits(parseRg(e.stdout), await rgSearchAlso(args))
       throw new SandboxError(`search failed: ${(e.stderr || e.message).trim()}`)
+    }
+  }
+
+  /** The searchAlso directories, searched with ripgrep's hidden and ignore filters off. */
+  async function rgSearchAlso(args: string[]): Promise<SearchHit[]> {
+    const dirs = (opts.searchAlso ?? []).map((d) => repoRel(resolveInside(repoDir, d))).filter((d) => d !== '.' && existsSync(path.join(repoDir, d)))
+    if (!dirs.length) return []
+    try {
+      const { stdout } = await execFileP('rg', [...args.slice(0, -1), '--hidden', '--no-ignore', '--', ...dirs], { cwd: repoDir, maxBuffer: EXEC_MAX_BUFFER, encoding: 'utf8' })
+      return parseRg(stdout)
+    } catch (err) {
+      const e = err as Error & { code?: number | string; stdout?: string }
+      if (e.code === 2 && e.stdout) return parseRg(e.stdout)
+      return []
     }
   }
 
@@ -337,6 +357,19 @@ function capLines(text: string, max: number): string {
 }
 
 const RG_LINE = /^(?:\.\/)?(.+?):(\d+):(.*)$/
+
+/** Union of two hit lists, first occurrence wins, in path then line order. */
+function mergeHits(a: SearchHit[], b: SearchHit[]): SearchHit[] {
+  const seen = new Set<string>()
+  const out: SearchHit[] = []
+  for (const h of [...a, ...b]) {
+    const key = `${h.path}:${h.line}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(h)
+  }
+  return out.sort((x, y) => (x.path === y.path ? x.line - y.line : x.path < y.path ? -1 : 1))
+}
 
 function parseRg(stdout: string): SearchHit[] {
   const hits: SearchHit[] = []
