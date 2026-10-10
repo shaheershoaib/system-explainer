@@ -76,13 +76,21 @@ system and never migrate silently.
 **Bundle.** `system` (one-liner, pitch, audience, depth, repo URL), `actors[]` (context diagram),
 `entities[]` with cardinality (ER diagram), optional `verbs[]`, `flows[]`, `simulations[]`,
 `screens[]`, `architecture`, `glossary[]`, and `modules[]`. A module has ordered `lessons[]` of typed
-blocks (`prose`, `mental-model`, `predict-reveal`, `diagram`, `code`, `worked-example`, `callout`,
+blocks (`prose`, `mental-model`, `predict-reveal`, `diagram`, `code`, `quote`, `worked-example`, `callout`,
 `simulation`, `screen`, `code-map`, `decisions`, `sources`, `exercise`) and a `quiz[]` (`mcq`,
 `ordering`, `short-answer`, `spot-bug`). MCQ and spot-bug items carry a `misconception {id, trap,
 correction}`; that id is the unit the dashboard aggregates and the unit spaced review schedules.
 `provenance.grounding` records the repo commit the snippets were verified against and how many were
 byte-exact; the validator refuses to emit a bundle with dangling references, duplicate ids, an MCQ
 with no correct option, or a prerequisite cycle.
+
+**Corpus** (3.3.0). Any source that is not a code repository is normalized before the course loop
+sees it: one markdown file per document under `.system-explainer/corpus/`, with front matter (title,
+origin, content date, speakers, how it was obtained, whether a model transcribed it) and a
+`manifest.json` holding a sha256 per file and, for sources an access agent reached, the recipe that
+replays the fetch without a model. Quotes in the bundle cite corpus paths, `provenance.corpus`
+records the mode and anything the course was built without, and reverify compares hashes instead of
+a git diff. The contract is `onboarding-template/generator/ingest/types.ts`.
 
 ## Why one engine and many bundles
 
