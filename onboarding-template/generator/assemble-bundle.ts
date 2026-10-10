@@ -12,13 +12,15 @@
  * + public/bundle.json. It is the product's second half: orchestrated authoring (the loop) →
  * deterministic, verified assembly.
  */
+import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateBundle } from './validate'
 import { applyGrounding, verifyGrounding, summarize, type FileReader, type GroundingSummary } from './verify-grounding'
 import { repoRefOf } from './repo-ref'
-import { BUNDLE_SCHEMA_VERSION, type Block, type Entity, type Module, type OnboardingBundle, type QuizItem } from '../schema/bundle'
+import type { CorpusDoc, CorpusManifest, CourseMode } from './ingest/types'
+import { BUNDLE_SCHEMA_VERSION, type Block, type Entity, type Module, type OnboardingBundle, type Provenance, type QuizItem } from '../schema/bundle'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -28,8 +30,55 @@ const arg = (n: string): string | undefined => {
 }
 const OPT_IDS = ['a', 'b', 'c', 'd', 'e']
 
+/** A corpus doc's path relative to the grounding root: '' relPath means the corpus IS the root. */
+export function citedPath(relPath: string, docPath: string): string {
+  const base = relPath.replace(/\/+$/, '')
+  return base ? `${base}/${docPath}` : docPath
+}
+
+/** Documents-mode grounding pin: a corpus has no commit, so its identity is the hash of every doc's path and content hash. */
+export function corpusRefOf(manifest: CorpusManifest): string {
+  const lines = manifest.docs.map((d) => `${d.path}:${d.sha256}`).sort()
+  return `corpus@${createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 12)}`
+}
+
+export interface AssembleCorpus {
+  manifest: CorpusManifest
+  /** The corpus path relative to the grounding root ('' in documents mode). */
+  relPath: string
+  mode: CourseMode
+  unreachable?: { source: string; why: string }[]
+}
+
+/** A lesson quote as a bundle block, cited from the manifest doc it was taken from. */
+function quoteBlock(q: any, corpus?: AssembleCorpus): Block {
+  const sourcePath = String(q.sourcePath)
+  const prefix = corpus?.relPath ? citedPath(corpus.relPath, '') : ''
+  const docPath = prefix && sourcePath.startsWith(prefix) ? sourcePath.slice(prefix.length) : sourcePath
+  const doc = corpus?.manifest.docs.find((d) => d.path === docPath)
+  const cite: Extract<Block, { type: 'quote' }>['cite'] = { title: doc?.title ?? sourcePath }
+  if (doc) cite.kind = doc.service ?? doc.kind
+  if (doc?.date) cite.date = doc.date
+  if (q.speaker) cite.speaker = String(q.speaker)
+  if (doc && /^https?:\/\//i.test(doc.origin)) cite.url = doc.origin
+  return { type: 'quote', text: String(q.text), sourcePath, cite }
+}
+
+function sourceOf(d: CorpusDoc, relPath: string): Provenance['sources'][number] {
+  return {
+    path: citedPath(relPath, d.path),
+    sha256: d.sha256,
+    title: d.title,
+    kind: d.service ?? d.kind,
+    origin: d.origin,
+    date: d.date,
+    retrievedAt: d.retrievedAt,
+    transcribedBy: d.transcribedBy,
+  }
+}
+
 /** Map the loop's DraftModule JSON onto the engine's bundle contract (deterministic). */
-function buildBundle(out: any, systemId: string): OnboardingBundle {
+function buildBundle(out: any, systemId: string, corpus?: AssembleCorpus): OnboardingBundle {
   const sys = out.system || {}
 
   // entities = canonical data model (with relationships → ER) + supplementary module concepts
@@ -58,6 +107,7 @@ function buildBundle(out: any, systemId: string): OnboardingBundle {
       if (l.prose) blocks.push({ type: 'prose', md: String(l.prose) })
       for (const c of l.code || [])
         if (c && c.snippet) blocks.push({ type: 'code', language: c.language || 'text', code: c.snippet, caption: c.caption, sourcePath: c.sourcePath })
+      for (const q of l.quotes || []) if (q && q.text && q.sourcePath) blocks.push(quoteBlock(q, corpus))
       if (l.callout && l.callout.md) blocks.push({ type: 'callout', variant: l.callout.variant || 'note', md: l.callout.md })
       if (!blocks.length) blocks.push({ type: 'prose', md: l.title || '…' })
       return { id: `${m.id}-l${li + 1}`, title: l.title || `Lesson ${li + 1}`, blocks }
@@ -191,6 +241,8 @@ export interface AssembleOptions {
   out?: string
   /** Engine directory receiving bundles/<system>/bundle.json + public/bundle.json (default: this package). */
   root?: string
+  /** Documents / mixed mode: cites quotes from the manifest and records the corpus in provenance. */
+  corpus?: AssembleCorpus
 }
 export interface AssembleResult {
   bundle: OnboardingBundle
@@ -210,7 +262,8 @@ export function assemble(o: AssembleOptions): AssembleResult {
   const base = o.root ? path.resolve(o.root) : root
   if (!o.dir && !o.inPath) throw new AssembleError('assemble: one of dir or inPath is required')
   const out = o.dir ? readWorkDir(path.resolve(o.dir)) : JSON.parse(readFileSync(o.inPath!, 'utf8'))
-  const bundle: any = buildBundle(out, o.system)
+  const corpus = o.corpus
+  const bundle: any = buildBundle(out, o.system, corpus)
   bundle.generatedAt = new Date().toISOString()
 
   // — Grounding gate: the authoritative snippet-vs-source check (independent of the loop) —
@@ -225,13 +278,21 @@ export function assemble(o: AssembleOptions): AssembleResult {
     const results = verifyGrounding(bundle, read)
     applyGrounding(bundle, results)
     const s = summarize(results)
+    const repoRef = corpus?.mode === 'documents' ? corpusRefOf(corpus.manifest) : repoRefOf(repo)
     bundle.provenance = {
       sources: [],
-      grounding: { repoRef: repoRefOf(repo), verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
+      grounding: { repoRef, verifiedAt: new Date().toISOString(), total: s.total, verified: s.verified, partial: s.partial, drifted: s.drifted, missingFile: s.missingFile, exact: s.exact },
       sourceLicense: sourceLicenseOf(read),
     }
     grounding = s
   }
+  if (corpus)
+    bundle.provenance = {
+      ...(bundle.provenance ?? {}),
+      // sha256 is the manifest's value verbatim: reverify compares it with the file on disk to find what changed.
+      sources: corpus.manifest.docs.map((d) => sourceOf(d, corpus.relPath)),
+      corpus: { mode: corpus.mode, docs: corpus.manifest.docs.length, unreachable: corpus.unreachable },
+    }
 
   const result = validateBundle(bundle)
   if (!result.ok) throw new AssembleError([`✗ assembled bundle failed validation (${result.errors.length}):`, ...result.errors.map((e) => '   • ' + e)].join('\n'))
@@ -266,6 +327,23 @@ function groundingLine(s: GroundingSummary): string {
   )
 }
 
+/**
+ * `--corpus <dir>`: the documents corpus the quotes cite (its manifest.json supplies titles, dates
+ * and the provenance record). Relative to --repo it decides the mode: the corpus IS the grounding
+ * root in documents mode, and sits inside the repo in mixed mode.
+ */
+function corpusArg(dir: string | undefined, repo: string | undefined): AssembleCorpus | undefined {
+  if (!dir) return undefined
+  const abs = path.resolve(dir)
+  const manifestPath = path.join(abs, 'manifest.json')
+  if (!existsSync(manifestPath)) throw new AssembleError(`✗ --corpus ${dir} has no manifest.json (run system-explainer ingest first)`)
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as CorpusManifest
+  const relPath = repo ? path.relative(path.resolve(repo), abs).split(path.sep).join('/') : ''
+  if (relPath.startsWith('..')) throw new AssembleError(`✗ --corpus ${dir} must be the --repo itself (documents) or inside it (mixed)`)
+  const unreachable = manifest.sources.filter((s) => s.status === 'unreachable' && s.problem).map((s) => ({ source: s.raw, why: s.problem!.why }))
+  return { manifest, relPath, mode: relPath ? 'mixed' : 'documents', unreachable: unreachable.length ? unreachable : undefined }
+}
+
 async function main() {
   const inPath = arg('in')
   const dirPath = arg('dir')
@@ -276,7 +354,7 @@ async function main() {
   }
   let res: AssembleResult
   try {
-    res = assemble({ dir: dirPath, inPath, system, repo: arg('repo'), out: arg('out') })
+    res = assemble({ dir: dirPath, inPath, system, repo: arg('repo'), out: arg('out'), corpus: corpusArg(arg('corpus'), arg('repo')) })
   } catch (e) {
     if (!(e instanceof AssembleError)) throw e
     console.error(e.message)
