@@ -1,8 +1,8 @@
 # system-explainer
 
-**Onboard to any codebase with a course that proves itself.**
+**Onboard to anything, a codebase or a pile of meeting notes, with a course that proves itself.**
 
-system-explainer teaches how an unfamiliar software system really works, generates an interactive onboarding course from a repository, and then proves the course is true: every snippet is checked against the source, every claim is attacked by a skeptic, and a simulated learner has to pass the quiz. Nobody else verifies the explanation; this tool ships the proof with the course.
+system-explainer teaches how an unfamiliar system really works, generates an interactive onboarding course from a repository, from documents of any kind (meeting notes, transcripts, PDFs, Word files, wiki pages, URLs), or from both, and then proves the course is true: every snippet is checked against the source, every claim is attacked by a skeptic, and a simulated learner has to pass the quiz. Nobody else verifies the explanation; this tool ships the proof with the course.
 
 [**Live demo: the zustand course**](https://shaheershoaib.github.io/system-explainer/) · [**Its proof report**](onboarding-template/proof-runs/zustand/PROOF_REPORT.md) · [Install](#install) · [Architecture](docs/architecture.md)
 
@@ -19,7 +19,7 @@ So the method is built around observation rather than recall. A grounding pass r
 | Job | What it produces | Where |
 |---|---|---|
 | **Teach** | A conversation that builds a concept-first mental model, validates it by making you restate it, stress-tests it, and grounds it in the real files, screens or endpoints. Persists a knowledge base you can commit. Works on a codebase, an API, infrastructure, or a live tool whose only "source" is a canvas or admin UI. | [`SKILL.md`](SKILL.md) |
-| **Generate** | A standalone interactive course: "the life of one X" traced step by step as the landing hero, concept lessons, diagrams derived from the data model, syntax-highlighted verbatim code deep-linked to source, quizzes built from a misconception bank, branching simulations with a live ledger, annotated real screens, spaced review, a lead dashboard. One engine, a validated data bundle per system. Hand-authored from a knowledge base, or autonomously from a cold repo in one command. | [`references/course-generation.md`](references/course-generation.md), [`onboarding-template/`](onboarding-template/) |
+| **Generate** | A standalone interactive course: "the life of one X" traced step by step as the landing hero, concept lessons, diagrams derived from the data model, syntax-highlighted verbatim code deep-linked to source, quizzes built from a misconception bank, branching simulations with a live ledger, annotated real screens, spaced review, a lead dashboard. One engine, a validated data bundle per system. Hand-authored from a knowledge base, or autonomously in one command from a cold repo, from documents (lessons then quote the source verbatim, with speaker and date), or from both. | [`references/course-generation.md`](references/course-generation.md), [`onboarding-template/`](onboarding-template/) |
 | **Prove** | A proof report on three layers: **faithful** (snippet = source, line-exact), **true** (each claim survives an adversarial refuter), **effective** (a learner who read the module beats a cold control on a hardened quiz). Plus `reverify`, which re-runs the grounding gate on every commit and fails when the repo drifts past the course. | [`onboarding-template/generator/`](onboarding-template/generator/) |
 
 ## See it: the flagship course
@@ -69,17 +69,23 @@ Install the skill (below), open the repo you want to understand, and ask:
 
 The skill will configure a knowledge base, build a mental model with you, make you restate it, ground it in the real artifacts, and log every non-obvious behaviour it finds to `gotchas.md`. Ask "and where in the code is that handled?" to switch to walkthrough mode.
 
-### Generate a course from a repo
+### Generate a course from anything
 
 From any terminal, with your own Anthropic API key (bring your own key; nothing is proxied):
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-npx system-explainer course /path/to/repo      # enumerate, data model, author, verify, critic; assemble + grounding gate
-npx system-explainer serve /path/to/repo       # the course at http://localhost:4173
+npx system-explainer course /path/to/repo                        # a codebase
+npx system-explainer course ~/notes/project-kickoff/             # a folder of meeting notes, transcripts, PDFs, Word and PowerPoint files
+npx system-explainer course /path/to/repo ~/notes/ https://...   # code plus the documents around it
+npx system-explainer serve /path/to/repo                         # the course at http://localhost:4173
 ```
 
-The loop enumerates domains, extracts the data model, authors one module per domain, verifies every snippet against source (self-healing drift), and re-runs a completeness critic until nothing is missing. Everything lands under `<repo>/.system-explainer/` (the bundle, the viewer, transcripts). Defaults: `claude-opus-5` at high effort; `--model`, `--effort`, `--concurrency` tune cost; the run prints token totals and an estimated cost at the end.
+The loop enumerates domains (or, for documents, topics: processes, decisions, owners, what changed when), extracts the data model, authors one module per domain, verifies every code snippet and every quote against its source, and re-runs a completeness critic until nothing is missing. When documents disagree, the most recent one wins and the lesson says what changed. When code and documents disagree, the course teaches what the code does and flags what the documents claimed. Everything lands under `.system-explainer/` in the repo or folder you gave (the bundle, the corpus of normalized sources, the viewer, transcripts). Defaults: `claude-opus-5` at high effort; `--model`, `--effort`, `--concurrency`, `--audience` tune it; the run prints token totals and an estimated cost at the end.
+
+**There is no list of supported services.** The code reads file formats (Markdown, text, HTML, PDF, Word, PowerPoint, VTT and SRT transcripts, email, CSV, JSON), folders, any git URL, and plain web pages. Anything else, such as a page behind a sign-in, an app's API or a reference in words, goes to an access agent. It reasons from what you gave it and from the credential *names* in your environment (it never sees values). It reads the source's documentation when it needs to, then either fetches the content or tells you exactly what would unlock it. A token is only ever sent to a host you allowed with `--grant VAR=host`, and the content is copied from the responses verbatim, never written by the model. `npx system-explainer sources` shows what this machine can read and which credential names it sees.
+
+**Unreadable sources stop the run loudly, before the course loop spends anything.** Each one gets what was observed, why it failed, and numbered fixes for that source (exit code 3). `--allow-partial` builds without them, and both the course and the proof report then list what was left out. `--transcribe` lets the model read scanned PDFs and images, and marks those sources as transcribed.
 
 Inside Claude Code the same loop runs as a Workflow when you ask "Course this repo for new developers"; the CLI is the same pipeline without the Claude Code runtime.
 
@@ -87,9 +93,11 @@ Inside Claude Code the same loop runs as a Workflow when you ask "Course this re
 
 ```bash
 npx system-explainer prove /path/to/repo               # skeptics per module, hardened quiz, taught vs cold learners
-npx system-explainer prove /path/to/repo --affected    # only modules whose cited files changed since the course was pinned
-npx system-explainer reverify /path/to/repo            # free: re-check every snippet against HEAD, no API call
+npx system-explainer prove /path/to/repo --affected    # only modules whose cited files or documents changed
+npx system-explainer reverify /path/to/repo            # free: re-read the sources, re-check every snippet and quote, no model call
 ```
+
+For a course built from documents, the proof says exactly what it checked: every quote appears verbatim in its source, and every claim matches what the sources say. It does **not** claim the sources are right, because meeting notes record decisions and opinions, not facts about the world. It also gains a learner test that means something: a cold model has never read your private notes.
 
 `prove` writes `.system-explainer/proof-runs/<system>/PROOF_REPORT.md` with the three layers above and an explicit list of the claims that did not survive; it exits 2 when a claim is refuted, so CI can gate on it. [`docs/ci/course-proof.yml`](docs/ci/course-proof.yml) is the two-speed gate ready to copy: `reverify` on every push (seconds, free), scoped `prove --affected` on merge (spends only on what changed).
 
@@ -143,7 +151,7 @@ Two contracts, many consumers. The **knowledge base** is markdown (`one-job`, `a
 
 ## Roadmap
 
-- **Standalone `npx system-explainer course <repo>`** with your own API key, so the autonomous loop runs outside Claude Code. The prompts are already data in `onboarding-template/generator/*.workflow.js`.
+- Audio and video sources read directly (today the CLI asks for the transcript instead).
 - A hosted gallery: paste a repo URL, get a course and its proof.
 - A cross-model adversarial pass, so the skeptic does not share the author's blind spots, and a cold control drawn from a model that has not memorized the repo, so Layer 3 can discriminate on famous public codebases too.
 

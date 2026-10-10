@@ -7,6 +7,10 @@
 #                                  modules whose cited files changed since the course was pinned.
 #                                  Nothing changed -> no agent runs -> no spend.
 #
+# A course built from documents works the same way: reverify re-reads the sources (saved access
+# recipes replay without a model call), so give this job the credential variables those sources
+# need and commit .system-explainer/access.json (it holds variable NAMES and hosts, never values).
+#
 # Copy this file into your repo's .github/workflows/, commit the course under
 # .system-explainer/ (produced by `npx system-explainer course .`), and add the
 # ANTHROPIC_API_KEY secret. Adjust the branch name and the Node version to taste.

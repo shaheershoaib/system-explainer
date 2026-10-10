@@ -2,6 +2,19 @@
 
 The living instructions are in [`SKILL.md`](SKILL.md) and [`references/course-generation.md`](references/course-generation.md); this file is the record of how they got here. Versions before 3.0.0 were developed privately; their entries are condensed.
 
+## 3.3.0 (2026-10-10): courses from any source
+
+Decisions D28 to D39 in the design record. A course can now be built from meeting notes, transcripts, PDFs, Word and PowerPoint files, wiki and web pages, a repo, or any mix, and the tool never ships a list of supported services.
+
+- **`course <source...>` takes anything.** Sources are normalized into a corpus of markdown files with front matter and a sha256 manifest, and the course, the grounding gate, the proof and reverify all read it the way they read a repo. New commands: `ingest <source...>` (read and report, no course) and `sources` (what this machine can read, and which credential names it sees).
+- **Formats in code, services by reasoning.** The code parses formats: Markdown, text, HTML, PDF, Word, PowerPoint, VTT and SRT transcripts, email, CSV, JSON, folders, any git URL, and plain GETs. Anything else goes to an **access agent**. It reasons from the source, the response the format layer saw, and the credential names in the environment, reads the system's public docs when unsure, and returns an extraction spec. The runtime copies the content verbatim from the stored responses, so the model never writes corpus text. Its access recipe is saved, so `reverify` replays it without a model call.
+- **Credentials stay out of the model and go only where you said.** `--grant VAR=host` binds a variable to one host (remembered by name in `.system-explainer/access.json`). Values are never shown to the model or written anywhere, and after a credentialed response, requests may only go to granted hosts.
+- **Loud before spending.** Every source is resolved before the course loop starts. Unreadable sources stop the run with exit code 3 and numbered fixes specific to that source. `--allow-partial` builds without them, and the course banner and the proof report list them. `--transcribe` lets the model read scanned PDFs and images, and each transcribed source is marked as such.
+- **Documents mode and mixed mode.** Topics instead of code domains; a new `quote` block (verbatim text, corpus path, title, date, speaker) grounded strictly, so a paraphrase is a misquote. The newest dated source wins and the lesson shows what changed. In mixed courses, code is what the system does and documents are what people planned, and a disagreement becomes a gotcha.
+- **Honest proof labels.** "True to the sources", with the plain statement that it does not check whether the sources are right. Transcribed sources are flagged, the "built without" list is shown, and the learner test finally means something, because a cold model has not read your private notes.
+- **Reverify by content hash** for documents: changed sources scope `prove --affected` to the modules that cite them, and unchanged transcriptions are reused rather than paid for again.
+- Fixes found along the way: the npm package declared MIT while the repo is Apache 2.0 (now Apache-2.0, with LICENSE and NOTICE in the tarball); a Workflow developer module with no code snippets was never written to disk; the proof's console lift line printed "+-10" for a negative lift; credential names matched substrings, so `PATH` looked like a credential.
+
 ## 3.2.0 (2026-09-04): the CLI, bring your own key
 
 Decisions D20 to D27 in the design record. The course loop and the proof loop no longer need Claude Code's Workflow runtime: `npx system-explainer course <repo>` and `prove <repo>` run them from any terminal or CI job against the Anthropic API with the user's own key.
