@@ -7,6 +7,7 @@ import { Diagram } from '../diagrams/Diagram'
 import { PredictReveal } from './PredictReveal'
 import { Exercise } from './Exercise'
 import { CodeLines } from './CodeLines'
+import { QuoteBlock } from './QuoteBlock'
 import { SimulationPlayer } from '../sim/SimulationPlayer'
 import { ScreenWalkthrough } from '../screen/ScreenWalkthrough'
 import { TraceDiagram } from '../trace/TraceDiagram'
@@ -30,6 +31,8 @@ export function BlockRenderer({ block }: { block: Block }) {
       return <Diagram dref={block.diagram} />
     case 'code':
       return <CodeSample {...block} />
+    case 'quote':
+      return <QuoteBlock block={block} />
     case 'worked-example':
       return <WorkedExample title={block.title} steps={block.steps} />
     case 'callout':
